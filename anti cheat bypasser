@@ -1,171 +1,260 @@
---[[ Behind Ya V1.0 by Darkon | Optimized for Forsaken ]]
-local Players, RunService = game:GetService("Players"), game:GetService("RunService")
-local lp = Players.LocalPlayer
-local char, hum, hrp = lp.Character or lp.CharacterAdded:Wait(), nil, nil
-local uis = game:GetService("UserInputService")
-local camera = workspace.CurrentCamera
-local debris = game:GetService("Debris")
+--// Services
+local Players, RunService, Workspace, Debris, SoundService = game:GetService("Players"), game:GetService("RunService"), game:GetService("Workspace"), game:GetService("Debris"), game:GetService("SoundService")
+local StarterGui = game:GetService("StarterGui")
+local LocalPlayer = Players.LocalPlayer
 
--- Auto remove any anti-cheat/hack scripts
-for _,v in pairs(getgc(true)) do
-    if typeof(v) == "table" then
-        for key in pairs(v) do
-            if type(key) == "string" and key:lower():match("anti") or key:lower():match("cheat") or key:lower():match("hack") then
-                v[key] = nil
-            end
-        end
-    end
+--// Variables
+local active, cooldown = false, false
+local circleLoopEnabled, selfDestructEnabled = false, false
+local lastHealth = 100
+local lastSafePos = nil
+
+--// Cleanup Anti-Cheat Scripts
+for _, v in ipairs(game:GetDescendants()) do
+	if v:IsA("Script") or v:IsA("LocalScript") then
+		local n = v.Name:lower()
+		if n:find("anti") or n:find("cheat") or n:find("hack") or n:find("kick") then
+			pcall(function() v:Destroy() end)
+		end
+	end
 end
 
--- GUI
-local scrGui = Instance.new("ScreenGui", game.CoreGui)
-scrGui.Name = "BehindYa_GUI"
-local showBtn = Instance.new("TextButton", scrGui)
-showBtn.Size = UDim2.new(0,120,0,30)
-showBtn.Position = UDim2.new(0,10,0,10)
-showBtn.BackgroundColor3 = Color3.fromRGB(30,30,30)
-showBtn.Text = "Show Log"
-showBtn.TextColor3 = Color3.new(1,1,1)
-showBtn.Draggable = true
-showBtn.Active = true
+--// Sounds
+local function playSound(id, volume)
+	local s = Instance.new("Sound", SoundService)
+	s.SoundId = "rbxassetid://" .. id
+	s.Volume = volume or 1
+	s:Play()
+	Debris:AddItem(s, 5)
+end
 
-local logFrame = Instance.new("Frame", scrGui)
-logFrame.Size = UDim2.new(0,200,0,200)
-logFrame.Position = UDim2.new(0,10,0,50)
-logFrame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+--// Floating Text
+local function floatText(text, color, duration)
+	local char = LocalPlayer.Character
+	if not char then return end
+	local gui = Instance.new("BillboardGui", char)
+	gui.Size = UDim2.new(0, 200, 0, 50)
+	gui.StudsOffset = Vector3.new(0, 4, 0)
+	gui.AlwaysOnTop = true
+	gui.Adornee = char:FindFirstChild("HumanoidRootPart")
+	local label = Instance.new("TextLabel", gui)
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = color
+	label.TextScaled = true
+	Debris:AddItem(gui, duration)
+end
+
+--// Particle Effect
+local function spawnParticles(part)
+	local emitter = Instance.new("ParticleEmitter", part)
+	emitter.Speed = NumberRange.new(0)
+	emitter.Rate = 60
+	emitter.Lifetime = NumberRange.new(0.5)
+	emitter.Size = NumberSequence.new(1)
+	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 255, 0))
+	Debris:AddItem(emitter, 1)
+end
+
+--// Get Nearest Player
+local function getNearest(radius)
+	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	local closest, dist = nil, radius
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local mag = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+			if mag < dist then
+				closest, dist = p, mag
+			end
+		end
+	end
+	return closest
+end
+
+--// Teleport
+local function teleportBehind(target)
+	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not root or not target or not target.Character then return end
+	local enemyRoot = target.Character:FindFirstChild("HumanoidRootPart")
+	if not enemyRoot then return end
+	local offset = -enemyRoot.CFrame.LookVector * 12 + Vector3.new(0, 3.25, 0)
+	local newPos = enemyRoot.Position + offset
+	lastSafePos = root.Position
+	playSound("9118823102", 2)
+	spawnParticles(root)
+	root.CFrame = CFrame.new(newPos)
+end
+
+--// Self Destruct
+local function selfDestruct()
+	if cooldown then return end
+	cooldown = true
+	floatText("SELF DESTRUCT!", Color3.fromRGB(255, 0, 0), 2)
+	playSound("9120219036", 1) -- Nuke alarm
+	task.wait(3)
+	playSound("9120197226", 1) -- Explosion
+	local char = LocalPlayer.Character
+	if char and char:FindFirstChild("Humanoid") then
+		local h = char.Humanoid
+		h.WalkSpeed = 45
+		task.delay(3.5, function()
+			if h then h.WalkSpeed = 16 end
+		end)
+	end
+	cooldown = false
+end
+
+--// Circle Loop
+local function circleLoop()
+	if cooldown then return end
+	cooldown = true
+	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	floatText("Circle Loop!", Color3.fromRGB(255, 255, 0), 2)
+	local angle = 0
+	for _ = 1, 5 do
+		angle += math.pi / 5
+		local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * 60
+		teleportBehind({Character = {HumanoidRootPart = {Position = root.Position + offset, CFrame = root.CFrame}}})
+		task.wait(0.25)
+	end
+	task.wait(5)
+	cooldown = false
+end
+
+--// GUI
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.Name = "BehindYaGui"
+gui.ResetOnSpawn = false
+
+StarterGui:SetCore("SendNotification", {Title="Behind Ya", Text="Successfully executed script", Duration=3})
+
+--// Toggle Button
+local toggleBtn = Instance.new("TextButton", gui)
+toggleBtn.Size = UDim2.new(0, 200, 0, 30)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.Text = "Behind Ya: OFF | Version 1.0"
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 255)
+toggleBtn.MouseButton1Click:Connect(function()
+	active = not active
+	toggleBtn.Text = active and "Behind Ya: ON | Version 1.0" or "Behind Ya: OFF | Version 1.0"
+	toggleBtn.BackgroundColor3 = active and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(0, 0, 255)
+end)
+
+--// Self Destruct Panel
+local destructBtn = Instance.new("TextButton", gui)
+destructBtn.Position = UDim2.new(0, 10, 0, 45)
+destructBtn.Size = UDim2.new(0, 180, 0, 30)
+destructBtn.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+destructBtn.Text = "Enable Self Destruct"
+local menuBtn = Instance.new("TextButton", destructBtn)
+menuBtn.Size = UDim2.new(0, 20, 0, 20)
+menuBtn.Position = UDim2.new(1, -22, 0, 5)
+menuBtn.Text = "..."
+menuBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+
+local testBtn = Instance.new("TextButton")
+testBtn.Size = UDim2.new(0, 180, 0, 30)
+testBtn.Position = destructBtn.Position
+testBtn.Visible = false
+testBtn.Parent = gui
+testBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+testBtn.Text = "Test Self Destruct"
+
+local closeBtn = Instance.new("TextButton", gui)
+closeBtn.Size = UDim2.new(0, 50, 0, 20)
+closeBtn.Position = destructBtn.Position + UDim2.new(0, 185, 0, 0)
+closeBtn.Text = "Close"
+closeBtn.Visible = false
+
+menuBtn.MouseButton1Click:Connect(function()
+	destructBtn.Visible = false
+	testBtn.Visible = true
+	closeBtn.Visible = true
+end)
+closeBtn.MouseButton1Click:Connect(function()
+	destructBtn.Visible = true
+	testBtn.Visible = false
+	closeBtn.Visible = false
+end)
+
+destructBtn.MouseButton1Click:Connect(function()
+	selfDestructEnabled = not selfDestructEnabled
+	destructBtn.Text = selfDestructEnabled and "Self Destruct: ON" or "Enable Self Destruct"
+end)
+testBtn.MouseButton1Click:Connect(selfDestruct)
+
+--// Circle Loop Button
+local loopBtn = Instance.new("TextButton", gui)
+loopBtn.Position = UDim2.new(0, 10, 0, 80)
+loopBtn.Size = UDim2.new(0, 180, 0, 30)
+loopBtn.Text = "Enable Circle Loop"
+loopBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+loopBtn.MouseButton1Click:Connect(function()
+	circleLoopEnabled = not circleLoopEnabled
+	loopBtn.Text = circleLoopEnabled and "Circle Loop: ON" or "Enable Circle Loop"
+end)
+
+--// Show Log Button
+local showLogBtn = Instance.new("TextButton", gui)
+showLogBtn.Position = UDim2.new(0, 10, 0, 120)
+showLogBtn.Size = UDim2.new(0, 120, 0, 30)
+showLogBtn.Text = "Show Log"
+showLogBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+showLogBtn.Draggable = true
+
+local logFrame = Instance.new("Frame", gui)
+logFrame.Size = UDim2.new(0, 200, 0, 300)
+logFrame.Position = UDim2.new(0, 10, 0, 160)
 logFrame.Visible = false
-local playerList = Instance.new("TextLabel", logFrame)
-playerList.Size = UDim2.new(1,0,1,0)
-playerList.TextColor3 = Color3.new(1,1,1)
-playerList.TextXAlignment = Enum.TextXAlignment.Left
-playerList.TextYAlignment = Enum.TextYAlignment.Top
-playerList.BackgroundTransparency = 1
-playerList.Text = ""
+logFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 
-showBtn.MouseButton1Click:Connect(function()
+local uiList = Instance.new("UIListLayout", logFrame)
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+
+showLogBtn.MouseButton1Click:Connect(function()
 	logFrame.Visible = not logFrame.Visible
 end)
 
-RunService.RenderStepped:Connect(function()
-	local log = ""
-	for _,p in pairs(Players:GetPlayers()) do
-		log = log..p.Name.."\n"
+-- Update log
+RunService.Heartbeat:Connect(function()
+	logFrame:ClearAllChildren()
+	local uiList = Instance.new("UIListLayout", logFrame)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local label = Instance.new("TextLabel", logFrame)
+		label.Size = UDim2.new(1, 0, 0, 20)
+		label.Text = plr.Name
+		label.BackgroundTransparency = 1
+		label.TextColor3 = Color3.new(1, 1, 1)
 	end
-	playerList.Text = log
 end)
 
--- Notify
-local function notify(msg)
-	game.StarterGui:SetCore("SendNotification", {
-		Title = "Behind Ya",
-		Text = msg,
-		Duration = 3
-	})
-end
-
-notify("Successfully Executed Script (v1.0)")
-
--- Variables
-local behindYaEnabled = true
-local selfDestructEnabled = false
-local circleLoopEnabled = false
-local lastSafePos = nil
-local canSelfDestruct = true
-
--- Functions
-local function teleportBehind()
-	char = lp.Character
+--// Main Behavior
+RunService.Heartbeat:Connect(function()
+	if not active or cooldown then return end
+	local char = LocalPlayer.Character
 	if not char then return end
-	hum = char:FindFirstChildOfClass("Humanoid")
-	hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
 
-	local dir = -camera.CFrame.LookVector
-	local newPos = hrp.Position + Vector3.new(dir.X, 0, dir.Z).Unit * 12.5 + Vector3.new(0,3.5,0)
-	local ray = workspace:Raycast(hrp.Position, newPos - hrp.Position)
-	if not ray then
-		hrp.CFrame = CFrame.new(newPos)
-	end
-end
-
-local function floatText(text, pos, color)
-	local b = Instance.new("BillboardGui", scrGui)
-	b.Adornee = nil
-	b.Size = UDim2.new(0,200,0,50)
-	b.StudsOffset = Vector3.new(0,3,0)
-	b.AlwaysOnTop = true
-	local t = Instance.new("TextLabel", b)
-	t.Size = UDim2.new(1,0,1,0)
-	t.Text = text
-	t.TextColor3 = color
-	t.BackgroundTransparency = 1
-	t.TextScaled = true
-	b:SetAttribute("Lifespan", tick())
-	b.Parent = lp.Character:FindFirstChild("HumanoidRootPart") or scrGui
-	debris:AddItem(b, 2)
-end
-
-local function selfDestruct()
-	if not canSelfDestruct then return end
-	canSelfDestruct = false
-
-	floatText("☢️ SELF DESTRUCT INITIATED ☢️", hrp.Position, Color3.fromRGB(255,100,0))
-	notify("☢️ Self Destruct Activated")
-	
-	local alarm = Instance.new("Sound", hrp)
-	alarm.SoundId = "rbxassetid://9118823104"
-	alarm.Volume = 2
-	alarm:Play()
-	task.wait(3)
-
-	local explode = Instance.new("Sound", hrp)
-	explode.SoundId = "rbxassetid://138186576"
-	explode.Volume = 2
-	explode:Play()
-
-	hum.WalkSpeed = 45
-	task.wait(3.5)
-	hum.WalkSpeed = 16
-	canSelfDestruct = true
-end
-
--- Auto Trigger Self Destruct
-local healthCheck = hum and hum.Health or 100
-hum:GetPropertyChangedSignal("Health"):Connect(function()
-	local newHealth = hum.Health
-	if newHealth < 40 and healthCheck >= 40 then
-		selfDestruct()
-	elseif math.abs(healthCheck - newHealth) >= 35 then
+	-- Self Destruct Trigger
+	if selfDestructEnabled and (humanoid.Health < 40 and lastHealth >= 40 or lastHealth - humanoid.Health >= 35) then
 		selfDestruct()
 	end
-	healthCheck = newHealth
-end)
+	lastHealth = humanoid.Health
 
--- Circle Loop
-task.spawn(function()
-	while task.wait(0.1) do
-		if circleLoopEnabled then
-			local angle = tick() % 6.28
-			local offset = Vector3.new(math.cos(angle),0,math.sin(angle))*10
-			hrp.CFrame = CFrame.new(hrp.Position + offset)
-		end
+	-- Behind Ya
+	local target = getNearest(80)
+	if target then
+		teleportBehind(target)
+		floatText("Poof", Color3.new(1,1,1), 1)
+		task.wait(2.3)
 	end
-end)
 
--- Input Handling
-uis.InputBegan:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.H then
-		behindYaEnabled = not behindYaEnabled
-	elseif input.KeyCode == Enum.KeyCode.J then
-		circleLoopEnabled = not circleLoopEnabled
-	elseif input.KeyCode == Enum.KeyCode.K then
-		selfDestruct()
-	end
-end)
-
--- Behind Ya Positioning
-RunService.Stepped:Connect(function()
-	if behindYaEnabled then
-		teleportBehind()
+	-- Circle Loop
+	if circleLoopEnabled and getNearest(195) then
+		circleLoop()
 	end
 end)
