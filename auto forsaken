@@ -1,243 +1,108 @@
---// Services
 local Players = game:GetService("Players")
-local PathfindingService = game:GetService("PathfindingService")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
 
---// Variables
-local autoSurvivorEnabled = false
-local autoKillerEnabled = false
-local autoGeneratorEnabled = false
-local killerESPEnabled = true
-local lastPath = nil
-local staminaThreshold = 15 -- example stamina limit
-local killer = nil
-local generatorList = {}
-local workspaceFolder = workspace -- adjust if generators are in a specific folder
+local clones = {}
+local cloneCount = 3 -- Start with 3 clones; you can change this
 
---// Utility functions
-local function getKillers()
-    local killers = {}
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") then
-            local role = plr:GetAttribute("Role") or ""
-            if role:lower():find("killer") then
-                table.insert(killers, plr)
-            end
+local jumpConnection
+
+-- Function to create a clone of the player character
+local function createClone()
+    if not player.Character then return nil end
+    local clone = player.Character:Clone()
+    clone.Name = player.Name .. "_Clone_" .. #clones + 1
+    clone.Parent = workspace
+
+    -- Remove scripts to avoid conflicts
+    for _, child in ipairs(clone:GetDescendants()) do
+        if child:IsA("Script") or child:IsA("LocalScript") then
+            child:Destroy()
+        elseif child:IsA("BasePart") then
+            child.Anchored = false
+            child.CanCollide = false
         end
     end
-    return killers
-end
 
-local function isKillerNearby(radius)
-    local killers = getKillers()
-    for _, k in pairs(killers) do
-        local hrp = k.Character and k.Character:FindFirstChild("HumanoidRootPart")
-        if hrp and (hrp.Position - RootPart.Position).Magnitude <= radius then
-            killer = k
-            return true
-        end
+    -- Set HumanoidRootPart properties
+    local hrp = clone:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.Anchored = false
     end
-    killer = nil
-    return false
+
+    return clone
 end
 
-local function dodgeKillerAttack()
-    -- Simple dodge: move perpendicular to killer
-    if killer and killer.Character and killer.Character:FindFirstChild("HumanoidRootPart") then
-        local dir = (RootPart.Position - killer.Character.HumanoidRootPart.Position).Unit
-        local dodgePos = RootPart.Position + (dir * 10) + Vector3.new(0,5,0)
-        if lastPath then
-            lastPath:Cancel()
-        end
-        local path = PathfindingService:CreatePath()
-        path:ComputeAsync(RootPart.Position, dodgePos)
-        if path.Status == Enum.PathStatus.Success then
-            path:MoveTo(RootPart)
-            lastPath = path
+-- Function to update clones' positions around the player
+local function updateClones()
+    local basePos = player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character.HumanoidRootPart.Position
+    if not basePos then return end
+
+    for i, clone in ipairs(clones) do
+        local hrp = clone:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local offset = Vector3.new(4 * i, 0, 0) -- Space clones 4 studs apart on X axis
+            local targetPos = basePos + offset
+
+            -- Smoothly move clone towards targetPos
+            hrp.CFrame = CFrame.new(targetPos, targetPos + player.Character.HumanoidRootPart.CFrame.LookVector)
         end
     end
 end
 
-local function runAwayFromKiller()
-    if killer and killer.Character and killer.Character:FindFirstChild("HumanoidRootPart") then
-        local dir = (RootPart.Position - killer.Character.HumanoidRootPart.Position).Unit
-        local escapePos = RootPart.Position + (dir * 50) + Vector3.new(0,5,0)
-        local path = PathfindingService:CreatePath()
-        path:ComputeAsync(RootPart.Position, escapePos)
-        if path.Status == Enum.PathStatus.Success then
-            path:MoveTo(RootPart)
-            lastPath = path
+-- Function to make clones jump when player jumps
+local function onJump()
+    for _, clone in ipairs(clones) do
+        local cloneHumanoid = clone:FindFirstChild("Humanoid")
+        if cloneHumanoid and cloneHumanoid:GetState() ~= Enum.HumanoidStateType.Jumping and cloneHumanoid:GetState() ~= Enum.HumanoidStateType.Freefall then
+            cloneHumanoid:ChangeState(Enum.HumanoidStateType.Jumping)
         end
     end
 end
 
-local function getStamina()
-    local stamina = Humanoid:GetAttribute("Stamina")
-    return stamina or 100
-end
-
-local function useAbilityIfNeeded()
-    -- This is generic and depends on game specifics
-    -- e.g. if stamina is enough, use sprint ability or dodge
-    if getStamina() > staminaThreshold then
-        -- Fire ability event, e.g. ReplicatedStorage:WaitForChild("UseAbility"):FireServer()
+-- Create initial clones
+for i = 1, cloneCount do
+    local newClone = createClone()
+    if newClone then
+        table.insert(clones, newClone)
     end
 end
 
-local function stopMovementIfLowStamina()
-    if getStamina() < 10 then
-        Humanoid.WalkSpeed = 0
-    else
-        Humanoid.WalkSpeed = 16
+-- Connect jump event
+if humanoid then
+    jumpConnection = humanoid.Jumping:Connect(onJump)
+end
+
+-- Update clones every frame
+RunService.Heartbeat:Connect(updateClones)
+
+-- Functions to add or remove clones
+local function addClone()
+    local newClone = createClone()
+    if newClone then
+        table.insert(clones, newClone)
     end
 end
 
-local function autoGeneratorFarm()
-    for _, gen in pairs(generatorList) do
-        if gen and gen:IsDescendantOf(workspaceFolder) then
-            local genPos = gen.Position or gen:GetPivot().Position
-            local dist = (RootPart.Position - genPos).Magnitude
-            if dist > 7 then
-                local path = PathfindingService:CreatePath()
-                path:ComputeAsync(RootPart.Position, genPos)
-                if path.Status == Enum.PathStatus.Success then
-                    path:MoveTo(RootPart)
-                end
-            else
-                -- Interact with generator
-                -- For example: fire generator repair event
-            end
-            task.wait(0.5)
-        end
+local function removeClone()
+    local clone = table.remove(clones)
+    if clone then
+        clone:Destroy()
     end
 end
 
---// ESP
-local function createESP(plr)
-    if plr.Character and not plr.Character:FindFirstChild("ESP_Box") then
-        local box = Instance.new("BoxHandleAdornment")
-        box.Name = "ESP_Box"
-        box.Adornee = plr.Character:FindFirstChild("HumanoidRootPart")
-        box.Size = Vector3.new(4,6,4)
-        box.Transparency = 0.5
-        box.Color3 = Color3.new(1,0,0)
-        box.AlwaysOnTop = true
-        box.Parent = plr.Character:FindFirstChild("HumanoidRootPart")
-    end
-end
+-- Example usage:
+-- To add a clone, call addClone()
+-- To remove a clone, call removeClone()
 
-local function removeESP(plr)
-    if plr.Character then
-        local box = plr.Character:FindFirstChild("ESP_Box")
-        if box then
-            box:Destroy()
-        end
-    end
-end
-
-local function updateESP()
-    for _, plr in pairs(getKillers()) do
-        createESP(plr)
-    end
-end
-
---// Main AI Loop
-RunService.Heartbeat:Connect(function()
-    if autoSurvivorEnabled then
-        updateESP()
-        if isKillerNearby(60) then
-            runAwayFromKiller()
-            dodgeKillerAttack()
-            useAbilityIfNeeded()
-            stopMovementIfLowStamina()
-        else
-            Humanoid.WalkSpeed = 16
-        end
-        if autoGeneratorEnabled then
-            autoGeneratorFarm()
-        end
-    end
-
-    if autoKillerEnabled then
-        -- Simple auto killer logic: chase closest survivor and attack
-        local closestSurvivor = nil
-        local closestDist = math.huge
-        for _, plr in pairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                local role = plr:GetAttribute("Role") or ""
-                if role:lower() ~= "killer" then
-                    local dist = (plr.Character.HumanoidRootPart.Position - RootPart.Position).Magnitude
-                    if dist < closestDist then
-                        closestDist = dist
-                        closestSurvivor = plr
-                    end
-                end
-            end
-        end
-
-        if closestSurvivor then
-            local targetPos = closestSurvivor.Character.HumanoidRootPart.Position
-            local path = PathfindingService:CreatePath()
-            path:ComputeAsync(RootPart.Position, targetPos)
-            if path.Status == Enum.PathStatus.Success then
-                path:MoveTo(RootPart)
-                lastPath = path
-            end
-            -- Add attack logic here if close enough
-        end
+-- For testing: Add commands via chat
+player.Chatted:Connect(function(msg)
+    if msg == "!addclone" then
+        addClone()
+    elseif msg == "!removeclone" then
+        removeClone()
     end
 end)
-
---// GUI
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "AutoPlayGUI"
-
-local function createButton(text, position, color)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0,150,0,40)
-    btn.Position = position
-    btn.BackgroundColor3 = color
-    btn.Text = text
-    btn.TextColor3 = Color3.new(1,1,1)
-    btn.Parent = ScreenGui
-    return btn
-end
-
-local autoSurvBtn = createButton("Auto Survivor: OFF", UDim2.new(0,10,0,10), Color3.fromRGB(0,128,255))
-local autoKillBtn = createButton("Auto Killer: OFF", UDim2.new(0,10,0,60), Color3.fromRGB(255,64,64))
-local autoGenBtn = createButton("Auto Generator: OFF", UDim2.new(0,10,0,110), Color3.fromRGB(128,255,0))
-
-autoSurvBtn.MouseButton1Click:Connect(function()
-    autoSurvivorEnabled = not autoSurvivorEnabled
-    autoSurvBtn.Text = "Auto Survivor: " .. (autoSurvivorEnabled and "ON" or "OFF")
-end)
-
-autoKillBtn.MouseButton1Click:Connect(function()
-    autoKillerEnabled = not autoKillerEnabled
-    autoKillBtn.Text = "Auto Killer: " .. (autoKillerEnabled and "ON" or "OFF")
-end)
-
-autoGenBtn.MouseButton1Click:Connect(function()
-    autoGeneratorEnabled = not autoGeneratorEnabled
-    autoGenBtn.Text = "Auto Generator: " .. (autoGeneratorEnabled and "ON" or "OFF")
-end)
-
---// Initialization
--- Find all generators in workspace (adjust path if needed)
-for _, obj in pairs(workspaceFolder:GetDescendants()) do
-    if obj.Name:lower():find("generator") and obj:IsA("BasePart") then
-        table.insert(generatorList, obj)
-    end
-end
-
--- Friendly message
-print("[AutoPlay] Loaded. Use GUI buttons to toggle Auto Survivor, Auto Killer, and Auto Generator.")
-
