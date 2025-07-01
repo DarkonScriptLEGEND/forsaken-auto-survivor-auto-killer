@@ -6,24 +6,23 @@ local Debris = game:GetService("Debris")
 local SoundService = game:GetService("SoundService")
 local LocalPlayer = Players.LocalPlayer
 
---// Remove Any Anti Cheat Scripts Silently
-for _, v in pairs(game:GetDescendants()) do
+--// Variables
+local active = false
+local cooldown = false
+local circleLoopEnabled = false
+local selfDestructEnabled = false
+
+--// Auto-remove anti-cheat scripts
+for _, v in ipairs(game:GetDescendants()) do
 	if v:IsA("Script") or v:IsA("LocalScript") then
-		local name = v.Name:lower()
-		if name:match("anti") or name:match("cheat") or name:match("hack") or name:match("hacker") or name:match("kick") or name:match("generatorhack") or name:match("fly hack") or name:match("speed hack") then
+		local nameLower = v.Name:lower()
+		if nameLower:find("anti") or nameLower:find("cheat") or nameLower:find("hack") or nameLower:find("kick") or nameLower:find("generatorhack") or nameLower:find("fly") or nameLower:find("speed") then
 			pcall(function() v:Destroy() end)
 		end
 	end
 end
 
---// Variables
-local active = false
-local viewing = nil
-local cooldown = false
-local circleLoopEnabled = false
-local selfDestructEnabled = false
-
---// Sound Setup
+--// Sound Effect
 local function playSound(id, volume)
 	local sound = Instance.new("Sound", SoundService)
 	sound.SoundId = "rbxassetid://" .. id
@@ -75,7 +74,7 @@ local function getNearest(radius)
 	return nearest
 end
 
---// Teleport Logic
+--// Teleport
 local function teleportTo(pos)
 	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if not root then return end
@@ -114,7 +113,7 @@ local function startSelfDestruct()
 	cooldown = false
 end
 
---// GUI Setup
+--// GUI
 local gui = Instance.new("ScreenGui", game.CoreGui)
 gui.Name = "BehindYaMini"
 gui.ResetOnSpawn = false
@@ -150,7 +149,7 @@ loopBtn.MouseButton1Click:Connect(function()
 	loopBtn.Text = circleLoopEnabled and "Circle Loop: ON" or "Enable Circle Loop"
 end)
 
---// Main Loop
+--// Main Logic
 RunService.Heartbeat:Connect(function()
 	if not active or cooldown then return end
 
@@ -158,8 +157,8 @@ RunService.Heartbeat:Connect(function()
 	if target then
 		local root = target.Character:FindFirstChild("HumanoidRootPart")
 		if root then
-			-- Force teleport exactly 8 studs behind the player
-			local behindPos = root.Position - root.CFrame.LookVector * 8
+			local offset = -root.CFrame.LookVector * 20 + Vector3.new(0, 6, 0)
+			local behindPos = root.Position + offset
 			teleportTo(behindPos)
 			floatText("Poof", Color3.fromRGB(255, 255, 255), 1)
 			task.wait(2.3)
