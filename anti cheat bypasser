@@ -1,0 +1,84 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local guiService = game:GetService("StarterGui")
+
+-- Function to remove anti-cheat scripts
+local function removeAntiCheat()
+    local keywords = {"anti", "cheat", "hack"}
+    local removedAny = false
+
+    for _, obj in pairs(game:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+            local nameLower = obj.Name:lower()
+            for _, keyword in pairs(keywords) do
+                if string.find(nameLower, keyword) then
+                    obj:Destroy()
+                    removedAny = true
+                    break
+                end
+            end
+        end
+    end
+
+    if removedAny then
+        -- Show green text for 5 seconds
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Name = "AntiCheatRemovalNotification"
+        screenGui.ResetOnSpawn = false
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(0, 300, 0, 50)
+        textLabel.Position = UDim2.new(0.5, -150, 0.1, 0)
+        textLabel.BackgroundTransparency = 0.5
+        textLabel.BackgroundColor3 = Color3.fromRGB(0, 128, 0) -- Green
+        textLabel.TextColor3 = Color3.new(1,1,1)
+        textLabel.Font = Enum.Font.SourceSansBold
+        textLabel.TextSize = 24
+        textLabel.Text = "Removed anti cheat"
+        textLabel.Parent = screenGui
+
+        wait(5)
+        screenGui:Destroy()
+    end
+end
+
+-- Function to give the player the AK-47 tool
+local function giveAK47()
+    local backpack = player:WaitForChild("Backpack")
+    local character = player.Character or player.CharacterAdded:Wait()
+
+    -- Check if already has AK-47 to avoid duplicates
+    if backpack:FindFirstChild("AK47") or character:FindFirstChild("AK47") then
+        return
+    end
+
+    local akTemplate = ReplicatedStorage:FindFirstChild("AK47")
+    if akTemplate then
+        local akClone = akTemplate:Clone()
+        akClone.Parent = backpack
+    else
+        warn("AK47 tool not found in ReplicatedStorage")
+    end
+end
+
+-- Remove anti cheat scripts immediately
+removeAntiCheat()
+
+-- Give AK-47 on spawn and respawn
+local function onCharacterAdded(char)
+    wait(1) -- wait a bit for backpack to load
+    giveAK47()
+end
+
+if player.Character then
+    onCharacterAdded(player.Character)
+end
+player.CharacterAdded:Connect(onCharacterAdded)
+
+-- OPTIONAL: Automatically remove anti cheat scripts every 15 seconds (in case new ones spawn)
+while true do
+    wait(15)
+    removeAntiCheat()
+end
