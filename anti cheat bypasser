@@ -7,11 +7,11 @@ local SoundService = game:GetService("SoundService")
 local LocalPlayer = Players.LocalPlayer
 
 --// Variables
-local active = false
-local viewing = nil
-local cooldown = false
-local circleLoopEnabled = false
-local selfDestructEnabled = false
+local active, viewing, cooldown = false, nil, false
+local circleLoopEnabled, selfDestructEnabled = false, false
+local lastSafePosition = nil
+local behindCooldown = false
+local lastCheck = tick()
 
 --// Sound Setup
 local function playSound(id, volume)
@@ -72,6 +72,19 @@ local function teleportTo(pos)
 	playSound("9118823102", 2)
 	spawnParticles(root)
 	root.CFrame = CFrame.new(pos)
+end
+
+--// Rescue Teleport
+local function teleportToSafe()
+	if not lastSafePosition then return end
+	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	behindCooldown = true
+	teleportTo(lastSafePosition)
+	floatText("Successfully bypassed anti cheat", Color3.fromRGB(0, 255, 0), 3)
+	task.delay(2.3, function()
+		behindCooldown = false
+	end)
 end
 
 --// Circle Loop
@@ -142,17 +155,38 @@ end)
 
 --// Main Loop
 RunService.Heartbeat:Connect(function()
-	if not active or cooldown then return end
+	local char = LocalPlayer.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+	local root = char.HumanoidRootPart
+	local now = tick()
+
+	-- Save safe position
+	if root.Position.Y > -10 and root.Position.Y < 10000 then
+		lastSafePosition = root.Position
+	end
+
+	-- Rescue if stuck
+	local velocity = root.Velocity
+	if (Workspace:FindPartOnRayWithIgnoreList(Ray.new(root.Position, Vector3.new(0, -4, 0)), {char}) == nil) or
+		root.Position.Y < -10 or
+		math.abs(velocity.Y) > 100 then
+
+		if now - lastCheck >= 0.35 and not behindCooldown then
+			teleportToSafe()
+			lastCheck = now
+		end
+	end
+
+	-- Core behavior
+	if not active or behindCooldown or cooldown then return end
 
 	local target = getNearest(85)
-	if target then
-		local root = target.Character:FindFirstChild("HumanoidRootPart")
-		if root then
-			local behindPos = root.Position - root.CFrame.LookVector * 45
-			teleportTo(behindPos)
-			floatText("Poof", Color3.fromRGB(255, 255, 255), 1)
-			task.wait(2.3)
-		end
+	if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+		local root2 = target.Character.HumanoidRootPart
+		local behindPos = root2.Position - root2.CFrame.LookVector * 45
+		teleportTo(behindPos)
+		floatText("Poof", Color3.fromRGB(255, 255, 255), 1)
+		task.wait(2.3)
 	end
 
 	local closeEnemy = getNearest(35)
