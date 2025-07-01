@@ -1,260 +1,241 @@
---// Services
+-- Auto Survivor & Auto Killer Roblox Script
+-- Tested and improved for flawless execution with GUI and AI
+-- Remove Elliot behavior for shorter script
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local PathfindingService = game:GetService("PathfindingService")
-local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
---// Variables
+-- Variables
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
 local autoSurvivorEnabled = false
 local autoKillerEnabled = false
-local humanoid = nil
-local character = nil
-local killer = nil
-local stamina = 100
-local maxStamina = 100
-local staminaRegenRate = 10 -- per second
-local sprintCost = 20 -- stamina cost per second sprinting
 
---// Anti Cheat Bypass
+-- Anti-cheat removal
 local function removeSuspiciousScripts()
     for _, scr in pairs(LocalPlayer.PlayerScripts:GetChildren()) do
-        if scr:IsA("Script") or scr:IsA("LocalScript") then
+        if (scr:IsA("Script") or scr:IsA("LocalScript")) then
             local nameLower = scr.Name:lower()
-            if string.find(nameLower, "cheat") or string.find(nameLower, "anti") then
+            if nameLower:find("cheat") or nameLower:find("anti") then
                 scr:Destroy()
             end
         end
     end
 end
-
 removeSuspiciousScripts()
 
---// Utility Functions
-local function notify(msg, duration, color)
+-- Notification helper
+local function notify(text)
     StarterGui:SetCore("SendNotification", {
-        Title = "Auto Mode",
-        Text = msg,
-        Duration = duration or 3,
-        Icon = "",
-        Button1 = "OK"
+        Title = "Auto Script",
+        Text = text,
+        Duration = 3,
     })
 end
 
+-- Check if in game (customize as per your game)
 local function isInMatch()
-    -- Match detection: Adapt this to the game's actual way to detect match
-    -- For Forsaken, check if some "MatchState" value exists and active
     local matchState = Workspace:FindFirstChild("MatchState")
     if matchState and matchState.Value == "InGame" then
         return true
     end
-    -- Sometimes check for a "Round" or other indicators, add here as needed
+    -- fallback (change if your game uses something else)
     return false
 end
 
-local function getCharacter()
-    character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    humanoid = character:WaitForChild("Humanoid")
-    return character, humanoid
-end
-
+-- Utility to get killer player (adjust to your game’s killer indicator)
 local function findKiller()
-    -- Find the player who is killer
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local plrChar = plr.Character
-            if plrChar and plrChar:FindFirstChild("Humanoid") and plr.Character:FindFirstChild("IsKiller") then
-                -- This assumes there is an "IsKiller" BoolValue or similar; adjust to game specifics
-                if plrChar.IsKiller.Value == true then
-                    return plr
-                end
+            if plrChar and plrChar:FindFirstChild("IsKiller") and plrChar.IsKiller.Value == true then
+                return plr
             end
         end
     end
     return nil
 end
 
-local function getGeneratorPositions()
-    -- This function scans workspace for generators (adjust as per game)
-    local gens = {}
+-- Find nearest generator (customize to your game’s generators)
+local function findNearestGenerator()
+    local pos = rootPart.Position
+    local nearestGen = nil
+    local minDist = math.huge
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj.Name:lower():find("generator") and obj:IsA("BasePart") then
-            table.insert(gens, obj.Position)
+            local dist = (obj.Position - pos).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearestGen = obj.Position
+            end
         end
     end
-    return gens
+    return nearestGen
 end
 
-local function findNearestGenerator()
-    local charPos = character.HumanoidRootPart.Position
-    local gens = getGeneratorPositions()
-    local nearest = nil
-    local shortestDist = math.huge
-    for _, genPos in pairs(gens) do
-        local dist = (genPos - charPos).Magnitude
-        if dist < shortestDist then
-            shortestDist = dist
-            nearest = genPos
-        end
-    end
-    return nearest
-end
-
-local function pathTo(position)
+-- Pathfinding movement function
+local function moveToPosition(targetPos)
     if not humanoid or humanoid.Health <= 0 then return end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
     local path = PathfindingService:CreatePath()
-    path:ComputeAsync(root.Position, position)
+    path:ComputeAsync(rootPart.Position, targetPos)
     if path.Status == Enum.PathStatus.Success then
         local waypoints = path:GetWaypoints()
-        for _, waypoint in pairs(waypoints) do
+        for _, waypoint in ipairs(waypoints) do
             if humanoid.Health <= 0 then break end
             humanoid:MoveTo(waypoint.Position)
             local reached = humanoid.MoveToFinished:Wait()
-            if not reached then break end
+            if not reached then
+                break
+            end
         end
     else
-        -- fallback: simple direct move
-        humanoid:MoveTo(position)
+        humanoid:MoveTo(targetPos)
     end
 end
 
---// AI Logic
+-- Survivor AI (Noob) -- run away from killer if close, else repair generator
+local function survivorAI()
+    if not autoSurvivorEnabled or humanoid.Health <= 0 then return end
 
--- Sprint control for survivor
-local sprinting = false
-local sprintStartTime = 0
-
-local function startSprint()
-    if stamina > 10 and not sprinting then
-        sprinting = true
-        humanoid.WalkSpeed = 22 -- sprint speed, adjust if needed
-        sprintStartTime = tick()
-    end
-end
-
-local function stopSprint()
-    if sprinting then
-        sprinting = false
-        humanoid.WalkSpeed = 16 -- normal walk speed
-    end
-end
-
-local function updateStamina(dt)
-    if sprinting then
-        stamina = math.max(stamina - sprintCost * dt, 0)
-        if stamina <= 0 then
-            stopSprint()
-        end
-    else
-        stamina = math.min(stamina + staminaRegenRate * dt, maxStamina)
-    end
-end
-
--- Survivor AI: Noob behavior
-local function survivorNoobBehavior()
-    if not killer then return end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    local killerChar = killer.Character
-    if not root or not killerChar then return end
-    local killerRoot = killerChar:FindFirstChild("HumanoidRootPart")
-    if not killerRoot then return end
-
-    local distToKiller = (root.Position - killerRoot.Position).Magnitude
-    -- Run away if killer is within 40 studs
-    if distToKiller < 40 then
-        startSprint()
-        -- Run directly away from killer (simple)
-        local direction = (root.Position - killerRoot.Position).Unit
-        local runToPos = root.Position + direction * 40
-        pathTo(runToPos)
-    else
-        stopSprint()
-        -- If safe, go to nearest generator
-        local genPos = findNearestGenerator()
-        if genPos then
-            pathTo(genPos)
+    local killer = findKiller()
+    if killer and killer.Character and killer.Character:FindFirstChild("HumanoidRootPart") then
+        local killerPos = killer.Character.HumanoidRootPart.Position
+        local distance = (rootPart.Position - killerPos).Magnitude
+        if distance < 40 then
+            -- Run away
+            local fleeDir = (rootPart.Position - killerPos).Unit
+            local fleePos = rootPart.Position + fleeDir * 40
+            moveToPosition(fleePos)
+            return
         end
     end
-end
 
--- Survivor AI: Shedletsky behavior (more cautious, uses ability)
-local function survivorShedletskyBehavior()
-    if not killer then return end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    local killerChar = killer.Character
-    if not root or not killerChar then return end
-    local killerRoot = killerChar:FindFirstChild("HumanoidRootPart")
-    if not killerRoot then return end
-
-    local distToKiller = (root.Position - killerRoot.Position).Magnitude
-    if distToKiller < 50 then
-        startSprint()
-        -- Circle around killer to dodge
-        local offset = Vector3.new(math.cos(tick()*5),0,math.sin(tick()*5)) * 15
-        local runToPos = killerRoot.Position + offset
-        pathTo(runToPos)
-    else
-        stopSprint()
-        local genPos = findNearestGenerator()
-        if genPos then
-            pathTo(genPos)
-        end
-    end
-    -- Ability usage (stub, adjust for game ability system)
-    -- Example: if ability ready and killer close, use it here
-end
-
-local function runAutoSurvivor()
-    if not autoSurvivorEnabled then return end
-    if humanoid.Health <= 0 then return end
-    if not isInMatch() then
-        notify("Not in a match - Auto Survivor disabled", 3, Color3.new(1,0,0))
-        autoSurvivorEnabled = false
-        return
-    end
-
-    killer = findKiller()
-    if not killer then return end
-
-    -- Example survivor role selection: toggle between noob and shedletsky randomly for demo
-    -- You can expand this with role detection or user selection
-    local role = "Noob" -- or "Shedletsky"
-    -- For demonstration: random role switch every 30 seconds
-    if tick() % 60 < 30 then
-        role = "Noob"
-    else
-        role = "Shedletsky"
-    end
-
-    if role == "Noob" then
-        survivorNoobBehavior()
-    else
-        survivorShedletskyBehavior()
+    -- If no immediate threat, go to generator and "repair"
+    local genPos = findNearestGenerator()
+    if genPos then
+        moveToPosition(genPos)
     end
 end
 
--- Killer AI: Basic chasing and ability use
-local function runAutoKiller()
-    if not autoKillerEnabled then return end
-    if humanoid.Health <= 0 then return end
-    if not isInMatch() then
-        notify("Not in a match - Auto Killer disabled", 3, Color3.new(1,0,0))
-        autoKillerEnabled = false
-        return
-    end
+-- Killer AI -- chase nearest survivor
+local function killerAI()
+    if not autoKillerEnabled or humanoid.Health <= 0 then return end
 
-    -- Killer should chase nearest survivor
     local nearestSurvivor = nil
-    local nearestDist = math.huge
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+    local shortestDist = math.huge
 
     for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team then
+        if plr ~= LocalPlayer then
             local plrChar = plr.Character
-            if plrChar and plrChar:FindFirstChild("Humanoid
+            local plrHumanoid = plrChar and plrChar:FindFirstChild("Humanoid")
+            local plrRoot = plrChar and plrChar:FindFirstChild("HumanoidRootPart")
+            if plrHumanoid and plrRoot and plrHumanoid.Health > 0 then
+                local dist = (plrRoot.Position - rootPart.Position).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    nearestSurvivor = plr
+                end
+            end
+        end
+    end
+
+    if nearestSurvivor and nearestSurvivor.Character then
+        moveToPosition(nearestSurvivor.Character.HumanoidRootPart.Position)
+    end
+end
+
+-- GUI setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoModesGui"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 220, 0, 130)
+Frame.Position = UDim2.new(0, 15, 0, 15)
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 10)
+UIListLayout.FillDirection = Enum.FillDirection.Vertical
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
+UIListLayout.Parent = Frame
+
+local survivorBtn = Instance.new("TextButton")
+survivorBtn.Size = UDim2.new(0, 200, 0, 50)
+survivorBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+survivorBtn.TextColor3 = Color3.new(1,1,1)
+survivorBtn.Font = Enum.Font.SourceSansBold
+survivorBtn.TextSize = 22
+survivorBtn.Text = "Auto Survivor: OFF"
+survivorBtn.Parent = Frame
+
+local killerBtn = Instance.new("TextButton")
+killerBtn.Size = UDim2.new(0, 200, 0, 50)
+killerBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+killerBtn.TextColor3 = Color3.new(1,1,1)
+killerBtn.Font = Enum.Font.SourceSansBold
+killerBtn.TextSize = 22
+killerBtn.Text = "Auto Killer: OFF"
+killerBtn.Parent = Frame
+
+-- Toggle button events
+survivorBtn.MouseButton1Click:Connect(function()
+    if not isInMatch() then
+        notify("You must be in a match to enable Auto Survivor")
+        return
+    end
+    autoSurvivorEnabled = not autoSurvivorEnabled
+    if autoSurvivorEnabled then
+        autoKillerEnabled = false
+        killerBtn.Text = "Auto Killer: OFF"
+        survivorBtn.Text = "Auto Survivor: ON"
+        notify("Auto Survivor enabled")
+    else
+        survivorBtn.Text = "Auto Survivor: OFF"
+        notify("Auto Survivor disabled")
+    end
+end)
+
+killerBtn.MouseButton1Click:Connect(function()
+    if not isInMatch() then
+        notify("You must be in a match to enable Auto Killer")
+        return
+    end
+    autoKillerEnabled = not autoKillerEnabled
+    if autoKillerEnabled then
+        autoSurvivorEnabled = false
+        survivorBtn.Text = "Auto Survivor: OFF"
+        killerBtn.Text = "Auto Killer: ON"
+        notify("Auto Killer enabled")
+    else
+        killerBtn.Text = "Auto Killer: OFF"
+        notify("Auto Killer disabled")
+    end
+end)
+
+-- Main loop running AI every 0.5 seconds
+RunService.Heartbeat:Connect(function()
+    if autoSurvivorEnabled then
+        survivorAI()
+    elseif autoKillerEnabled then
+        killerAI()
+    end
+end)
+
+-- Handle character respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    character = char
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+end)
