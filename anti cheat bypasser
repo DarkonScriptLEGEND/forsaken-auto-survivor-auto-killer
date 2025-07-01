@@ -1,158 +1,163 @@
--- Darkon Mega Boost Script 🔥
-
+-- Mega Client Ultimate Script
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
-
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
-local keywords = {"anti", "cheat", "hack"}
-local forsakenPlaceId = INSERT_FORSAKEN_PLACEID_HERE  -- replace this with the actual number!
+local keywords = {"anti","cheat","hack"}
+local forsakenPlaceId = INSERT_FORSAKEN_PLACEID_HERE -- replace!
 
--- 1️⃣ Setup RemoteEvent for FE gun
+-- Remote for FE gun tool
 local remoteName = "Darkon_GiveFEGun"
 if not ReplicatedStorage:FindFirstChild(remoteName) then
     Instance.new("RemoteEvent", ReplicatedStorage).Name = remoteName
 end
 
--- 2️⃣ Sound section
-local function playZoneMusic()
-    local sound = Instance.new("Sound")
-    sound.Name = "DarkonZoneMusic"
-    sound.Looped = true
-    sound.SoundId = "rbxassetid://" ..
-        (game.PlaceId == forsakenPlaceId and "1171745634977" or "18841893567")
-    sound.Volume = 1
-    sound.Parent = player:WaitForChild("PlayerGui")
-    sound:Play()
-end
+-- Music setup
+local musicGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+musicGui.Name = "DarkonMusicGui"
+local music = Instance.new("Sound", musicGui)
+music.Name = "ZoneMusic"
+music.Looped = true
+music.Priority = Enum.SoundPriority.Contextual
+music.SoundId = "rbxassetid://" ..
+    (game.PlaceId == forsakenPlaceId and "1171745634977" or "18841893567")
+music:Play()
 
--- 3️⃣ GUI helpers
-local function showMessage(text, color)
-    local gui = Instance.new("ScreenGui", player.PlayerGui)
-    local lbl = Instance.new("TextLabel", gui)
-    gui.Name = "DarkonMsgGUI"
-    lbl.Size = UDim2.new(0, 300, 0, 50)
-    lbl.Position = UDim2.new(0.5, -150, 0.1, 0)
-    lbl.BackgroundTransparency = 0.3
-    lbl.BackgroundColor3 = color
-    lbl.TextColor3 = Color3.new(1,1,1)
-    lbl.Font, lbl.TextSize = Enum.Font.SourceSansBold, 24
-    lbl.Text = text
-    task.delay(5, function() gui:Destroy() end)
-end
-
-local function showDeletedList(list)
-    local gui = Instance.new("ScreenGui", player.PlayerGui)
-    gui.Name = "DarkonDelList"
-    local f = Instance.new("Frame", gui)
-    f.Size, f.Position = UDim2.new(0,250,0,300), UDim2.new(0,10,0.3,0)
-    f.BackgroundTransparency, f.BackgroundColor3 = 0.3, Color3.fromRGB(20,20,20)
-    for i,name in ipairs(list) do
-        local lbl = Instance.new("TextLabel", f)
-        lbl.Size = UDim2.new(1,-10,0,20)
-        lbl.Position = UDim2.new(0,5,0,30 + (i-1)*20)
-        lbl.BackgroundTransparency = 1
-        lbl.TextColor3 = Color3.new(1,1,1)
-        lbl.Font, lbl.TextSize = Enum.Font.SourceSans, 16
-        lbl.Text, lbl.TextXAlignment = "- " .. name, Enum.TextXAlignment.Left
-    end
-    task.delay(30, function() gui:Destroy() end)
-end
-
--- 4️⃣ Remove anti-cheat scripts
+-- Anti-cheat removal (no list)
 local function removeAntiCheat()
-    local remList = {}
     for _,o in ipairs(game:GetDescendants()) do
         if (o:IsA("Script") or o:IsA("LocalScript") or o:IsA("ModuleScript")) then
-            local name = o.Name:lower()
+            local n = o.Name:lower()
             for _,k in ipairs(keywords) do
-                if name:find(k) then
-                    remList[#remList+1] = o:GetFullName()
-                    pcall(function() o:Destroy() end)
-                    break
-                end
+                if n:find(k) then pcall(function() o:Destroy() end) break end
             end
         end
     end
-    if #remList > 0 then
-        showMessage("✅ Removed anti cheat", Color3.fromRGB(0,200,0))
-        showDeletedList(remList)
-    end
 end
 
--- 5️⃣ FE gun receive + shooting
-local function giveGun()
-    task.wait(1)
-    if not player.Backpack:FindFirstChild("DarkonAK47") then
-        ReplicatedStorage[remoteName]:FireServer()
-    end
-end
-
-local function setupShoot()
-    local gun = player.Backpack:WaitForChild("DarkonAK47", 5)
-    if not gun then return end
-    local handle = gun:WaitForChild("Handle",5)
-    local snd = handle:WaitForChild("FireSound",5)
-    local mouse = player:GetMouse()
-    local cooldown = false
-    gun.Equipped:Connect(function()
-        mouse.Button1Down:Connect(function()
-            if cooldown then return end
-            cooldown = true
-            snd:Play()
-            -- visual beam
-            local origin = handle.Position
-            local dir = (mouse.Hit.p - origin).Unit * 300
-            local ray = Ray.new(origin, dir)
-            local hit, pos = workspace:FindPartOnRay(ray, player.Character)
-            local beam = Instance.new("Part", workspace)
-            beam.Anchored, beam.CanCollide = true, false
-            beam.Size = Vector3.new(0.2,0.2,(origin-pos).Magnitude)
-            beam.CFrame = CFrame.new(origin,pos) * CFrame.new(0,0,-beam.Size.Z/2)
-            beam.Material, beam.BrickColor = Enum.Material.Neon, BrickColor.new("Bright yellow")
-            Debris:AddItem(beam,0.15)
-            if hit and hit.Parent then
-                local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
-                if hum then hum.Health = hum.Health - 25 end
-            end
-            task.delay(0.12, function() cooldown = false end)
-        end)
-    end)
-end
-
--- 6️⃣ WalkSpeed adjust
+-- WalkSpeed maintenance
 local function maintainSpeed()
     if player.Character and player.Character:FindFirstChild("Humanoid") then
         player.Character.Humanoid.WalkSpeed = 45
     end
 end
 
--- 7️⃣ On respawn setups
-player.CharacterAdded:Connect(function(char)
-    for i=1,10 do task.wait(0.2); maintainSpeed() end
-    giveGun()
-    setupShoot()
+-- FE gun
+local function giveGun() task.wait(1); ReplicatedStorage[remoteName]:FireServer() end
+local function setupShoot()
+    local gun = player.Backpack:WaitForChild("DarkonAK47",5); if not gun then return end
+    local handle = gun:WaitForChild("Handle",5); local snd = handle:WaitForChild("FireSound",5)
+    local mouse = player:GetMouse()
+    local cooling = false
+    gun.Equipped:Connect(function()
+        mouse.Button1Down:Connect(function()
+            if cooling then return end
+            cooling = true; snd:Play()
+            local origin = handle.Position
+            local dir = (mouse.Hit.p-origin).Unit*300
+            local hit,pos = workspace:FindPartOnRay(Ray.new(origin,dir),player.Character)
+            local beam = Instance.new("Part",workspace)
+            beam.Anchored,beam.CanCollide = true,false
+            beam.Size = Vector3.new(0.2,0.2,(origin-pos).Magnitude)
+            beam.CFrame = CFrame.new(origin,pos)*CFrame.new(0,0,-beam.Size.Z/2)
+            beam.Material,beam.BrickColor = Enum.Material.Neon,BrickColor.new("Bright yellow")
+            Debris:AddItem(beam,0.15)
+            if hit and hit.Parent then
+                local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
+                if hum then hum.Health = hum.Health - 25 end
+            end
+            task.delay(0.12, function() cooling = false end)
+        end)
+    end)
+end
+
+-- Follow-player movement effect
+local following = false
+local trail = Instance.new("ParticleEmitter")
+trail.Texture = "rbxassetid://243660964" -- yellow-like particle
+trail.Rate = 50
+trail.Lifetime = NumberRange.new(0.3)
+trail.Speed = NumberRange.new(0,1)
+trail.Parent = nil
+
+local function toggleFollow()
+    following = not following
+    if not following then
+        trail.Enabled = false
+    end
+end
+
+-- Update follow movement each frame
+RunService.RenderStepped:Connect(function()
+    maintainSpeed()
+    if player.Character and following then
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            trail.Parent = hrp
+            trail.Enabled = true
+            -- find nearest
+            local nearest, dist = nil, math.huge
+            for _,pl in ipairs(Players:GetPlayers()) do
+                if pl ~= player and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                    local d = (hrp.Position - pl.Character.HumanoidRootPart.Position).Magnitude
+                    if d < dist then dist, nearest = d, pl end
+                end
+            end
+            if nearest then
+                hrp.CFrame = hrp.CFrame:Lerp(nearest.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3), 0.1)
+            end
+        end
+    end
 end)
 
--- 8️⃣ SERVER: inject gun tool (if executor supports)
-if game:GetService("RunService"):IsServer() then
+-- Key binds
+local uis = game:GetService("UserInputService")
+uis.InputBegan:Connect(function(inp, g)
+    if g then return end
+    if inp.KeyCode == Enum.KeyCode.F then toggleFollow()
+    elseif inp.KeyCode == Enum.KeyCode.P then
+        if music.IsPlaying then music:Pause()
+        else music:Play()
+    end
+    -- Anti-cheat removal manual
+    if inp.KeyCode == Enum.KeyCode.R then removeAntiCheat()
+    end
+end)
+
+-- Server injection for FE gun
+if RunService:IsServer() then
     local remote = ReplicatedStorage[remoteName]
     remote.OnServerEvent:Connect(function(plr)
         if plr.Backpack:FindFirstChild("DarkonAK47") then return end
         local tool = Instance.new("Tool")
-        tool.Name, tool.RequiresHandle, tool.CanBeDropped = "DarkonAK47", true, false
+        tool.Name = "DarkonAK47"; tool.RequiresHandle = true; tool.CanBeDropped = false
         local handle = Instance.new("Part", tool)
-        handle.Name, handle.Size, handle.BrickColor = "Handle", Vector3.new(1,1,3), BrickColor.new("Really black")
-        local sound = Instance.new("Sound", handle)
-        sound.Name, sound.SoundId, sound.Volume = "FireSound", "rbxassetid://12222242", 1
+        handle.Name="Handle"; handle.Size=Vector3.new(1,1,3); handle.BrickColor=BrickColor.new("Really black")
+        local snd = Instance.new("Sound", handle)
+        snd.Name="FireSound"; snd.SoundId="rbxassetid://12222242"; snd.Volume=1
         tool.Parent = plr.Backpack
     end)
 end
 
--- 9️⃣ Initial boot
-playZoneMusic()
-removeAntiCheat()
-maintainSpeed()
+-- Initialization
 giveGun()
 setupShoot()
-while true do task.wait(15); removeAntiCheat(); maintainSpeed() end
+removeAntiCheat()
+music:Play()
+
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+    maintainSpeed()
+    giveGun()
+    setupShoot()
+end)
+
+-- Loop tasks
+spawn(function()
+    while true do
+        task.wait(15)
+        removeAntiCheat()
+        maintainSpeed()
+    end
+end)
