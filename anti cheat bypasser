@@ -1,438 +1,353 @@
--- SERVICES
+-- // Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
-
+local SoundService = game:GetService("SoundService")
 local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- CONSTANTS
-local LOG_POSITIONS = {
-    Visible = UDim2.new(0, 10, 0, 150),
-    Hidden = UDim2.new(0, -300, 0, 150)
-}
-
--- ANTI CHEAT SCRIPT NAMES TO REMOVE (case insensitive, partial matches)
-local antiCheatKeywords = {
-    "anti", "cheat", "hack", "hacker", "anti cheat", "anti fly",
-    "kick", "generatorhack", "fly hack", "speed hack"
-}
-
--- UTILS
-local function containsKeyword(name)
-    if not name then return false end
-    name = name:lower()
-    for _, keyword in ipairs(antiCheatKeywords) do
-        if name:find(keyword) then
-            return true
-        end
-    end
-    return false
-end
-
-local function removeAntiCheatScripts()
-    for _, child in pairs(LocalPlayer.Backpack:GetChildren()) do
-        if containsKeyword(child.Name) then
-            child:Destroy()
-        end
-    end
-    for _, child in pairs(Character:GetChildren()) do
-        if containsKeyword(child.Name) then
-            child:Destroy()
-        end
-    end
-    for _, child in pairs(LocalPlayer.PlayerScripts:GetChildren()) do
-        if containsKeyword(child.Name) then
-            child:Destroy()
-        end
-    end
-end
-
-removeAntiCheatScripts()
-
--- GUI SETUP
-
--- Main Frame
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "SpeedDemonMainFrame"
-MainFrame.Size = UDim2.new(0, 200, 0, 400)
-MainFrame.Position = UDim2.new(0, 20, 0, 100)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = PlayerGui
-
--- Title Label
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Text = "Speed Demon V1.0"
-titleLabel.Size = UDim2.new(1, 0, 0, 30)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 18
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.Parent = MainFrame
-
--- BUTTONS --
-
--- Self Destruct Button
-local selfDestructBtn = Instance.new("TextButton")
-selfDestructBtn.Name = "SelfDestructBtn"
-selfDestructBtn.Text = "Enable Self Destruct"
-selfDestructBtn.BackgroundColor3 = Color3.new(1, 0.2, 0.2)
-selfDestructBtn.Size = UDim2.new(0, 180, 0, 40)
-selfDestructBtn.Position = UDim2.new(0, 10, 0, 50)
-selfDestructBtn.Parent = MainFrame
-
--- Dots Button (…)
-local dotsBtn = Instance.new("TextButton")
-dotsBtn.Name = "DotsBtn"
-dotsBtn.Text = "…"
-dotsBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-dotsBtn.Size = UDim2.new(0, 30, 0, 40)
-dotsBtn.Position = UDim2.new(0, 150, 0, 50)
-dotsBtn.Parent = MainFrame
-
--- Test Self Destruct Button (hidden by default)
-local testSelfDestructBtn = Instance.new("TextButton")
-testSelfDestructBtn.Name = "TestSelfDestructBtn"
-testSelfDestructBtn.Text = "Test Self Destruct"
-testSelfDestructBtn.BackgroundColor3 = Color3.new(1, 0.4, 0.4)
-testSelfDestructBtn.Size = UDim2.new(0, 180, 0, 40)
-testSelfDestructBtn.Position = UDim2.new(0, 10, 0, 50)
-testSelfDestructBtn.Visible = false
-testSelfDestructBtn.Parent = MainFrame
-
--- Close Button (hidden by default)
-local closeBtn = Instance.new("TextButton")
-closeBtn.Name = "CloseBtn"
-closeBtn.Text = "Close"
-closeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-closeBtn.Size = UDim2.new(0, 30, 0, 40)
-closeBtn.Position = UDim2.new(0, 150, 0, 50)
-closeBtn.Visible = false
-closeBtn.Parent = MainFrame
-
--- Circle Loop Toggle Button
-local circleLoopBtn = Instance.new("TextButton")
-circleLoopBtn.Name = "CircleLoopBtn"
-circleLoopBtn.Text = "Enable Circle Loop"
-circleLoopBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-circleLoopBtn.Size = UDim2.new(0, 180, 0, 40)
-circleLoopBtn.Position = UDim2.new(0, 10, 0, 100)
-circleLoopBtn.Parent = MainFrame
-
--- Show Log Button (movable)
-local showLogBtn = Instance.new("TextButton")
-showLogBtn.Name = "ShowLogBtn"
-showLogBtn.Text = "Show Log"
-showLogBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-showLogBtn.Size = UDim2.new(0, 80, 0, 30)
-showLogBtn.Position = UDim2.new(0, 10, 0, 150)
-showLogBtn.Parent = PlayerGui
-
--- Log Frame (hidden by default)
-local logFrame = Instance.new("ScrollingFrame")
-logFrame.Name = "LogFrame"
-logFrame.Size = UDim2.new(0, 200, 0, 200)
-logFrame.Position = LOG_POSITIONS.Hidden
-logFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-logFrame.BorderSizePixel = 0
-logFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-logFrame.ScrollBarThickness = 6
-logFrame.Parent = PlayerGui
-logFrame.Visible = false
-
--- UI List Layout for log entries
-local logLayout = Instance.new("UIListLayout")
-logLayout.Parent = logFrame
-logLayout.SortOrder = Enum.SortOrder.LayoutOrder
-logLayout.Padding = UDim.new(0, 2)
-
--- Function to update log list of players
-local function updateLog()
-    -- Clear current log
-    for _, child in pairs(logFrame:GetChildren()) do
-        if child:IsA("TextLabel") then
-            child:Destroy()
-        end
-    end
-
-    -- Add players
-    local players = Players:GetPlayers()
-    for i, plr in ipairs(players) do
-        local playerLabel = Instance.new("TextLabel")
-        playerLabel.Text = tostring(plr.Name)
-        playerLabel.Size = UDim2.new(1, -10, 0, 25)
-        playerLabel.BackgroundTransparency = 1
-        playerLabel.TextColor3 = Color3.new(1, 1, 1)
-        playerLabel.TextXAlignment = Enum.TextXAlignment.Left
-        playerLabel.Position = UDim2.new(0, 5, 0, 0)
-        playerLabel.Parent = logFrame
-    end
-
-    -- Update canvas size for scrolling
-    logFrame.CanvasSize = UDim2.new(0, 0, 0, #players * 27)
-end
-
--- Show Log button drag handling
-local dragging = false
-local dragInput, dragStart, startPos
-
-showLogBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = showLogBtn.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-showLogBtn.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        showLogBtn.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
-showLogBtn.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-
--- Show/hide log toggling
-showLogBtn.MouseButton1Click:Connect(function()
-    if logFrame.Visible then
-        logFrame.Visible = false
-        showLogBtn.Text = "Show Log"
-        logFrame.Position = LOG_POSITIONS.Hidden
-    else
-        updateLog()
-        logFrame.Visible = true
-        showLogBtn.Text = "Hide Log"
-        logFrame.Position = LOG_POSITIONS.Visible
-    end
-end)
-
--- MOVEMENT LOGIC
-
-local enabledCircleLoop = false
+-- // Variables
+local active = false
+local circleLoopEnabled = false
 local selfDestructEnabled = false
-local isSelfDestructActive = false
+local selfDestructTesting = false
+local cooldown = false
+local viewing = nil
 
-local function getBehindPosition()
-    -- Behind player: 12.5 studs behind, 3.5 studs above
-    local lookVector = RootPart.CFrame.LookVector
-    local behindPos = RootPart.Position - (lookVector * 12.5) + Vector3.new(0, 3.5, 0)
-    return behindPos
+-- // Anti-cheat remover (silent)
+local function removeAntiCheat()
+    local badNames = {"anti", "cheat", "hack", "hacker", "anti cheat", "anti fly", "kick", "generatorhack", "fly hack", "speed hack"}
+    for _, scr in pairs(LocalPlayer.PlayerScripts:GetChildren()) do
+        local lname = scr.Name:lower()
+        for _, bad in pairs(badNames) do
+            if lname:find(bad) then
+                scr:Destroy()
+                break
+            end
+        end
+    end
 end
 
-local lastSafePosition = RootPart.Position
+removeAntiCheat()
 
--- Old movement logic restored with position forcing behind player and circle loop
-RunService.Heartbeat:Connect(function()
-    if enabledCircleLoop then
-        local behindPos = getBehindPosition()
-        -- Teleport behind player
-        RootPart.CFrame = CFrame.new(behindPos, RootPart.Position) -- look at current pos to keep rotation consistent
-        lastSafePosition = behindPos
-    else
-        -- Restore last safe position tracking
-        lastSafePosition = RootPart.Position
-    end
-end)
+-- // Sound helper
+local function playSound(id, parent, volume)
+    local sound = Instance.new("Sound", parent)
+    sound.SoundId = "rbxassetid://" .. id
+    sound.Volume = volume or 1
+    sound:Play()
+    Debris:AddItem(sound, 5)
+end
 
--- CIRCLE LOOP BUTTON
-circleLoopBtn.MouseButton1Click:Connect(function()
-    enabledCircleLoop = not enabledCircleLoop
-    if enabledCircleLoop then
-        circleLoopBtn.Text = "Disable Circle Loop"
-        circleLoopBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 255)
-    else
-        circleLoopBtn.Text = "Enable Circle Loop"
-        circleLoopBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-    end
-end)
+-- // Floating Text helper
+local function floatText(text, color, duration)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
 
--- SELF DESTRUCT SOUND SETUP
-local nukeAlarmSound = Instance.new("Sound", RootPart)
-nukeAlarmSound.SoundId = "rbxassetid://9118823102" -- Nuke alarm sound, replace if desired
-nukeAlarmSound.Looped = true
-nukeAlarmSound.Volume = 1
-
-local nukeExplosionSound = Instance.new("Sound", RootPart)
-nukeExplosionSound.SoundId = "rbxassetid://138186576" -- Explosion sound, replace if desired
-nukeExplosionSound.Volume = 1
-
--- FLOATING TEXT UTILS
-local function createFloatingText(text, color, duration)
     local billboard = Instance.new("BillboardGui")
-    billboard.Adornee = RootPart
     billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.StudsOffset = Vector3.new(0, 4, 0)
     billboard.AlwaysOnTop = true
-    billboard.Parent = PlayerGui
+    billboard.Adornee = root
+    billboard.Parent = char
 
-    local label = Instance.new("TextLabel")
+    local label = Instance.new("TextLabel", billboard)
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = color
-    label.TextStrokeTransparency = 0
     label.TextScaled = true
-    label.Font = Enum.Font.SourceSansBold
-    label.Parent = billboard
 
-    delay(duration, function()
-        billboard:Destroy()
-    end)
+    Debris:AddItem(billboard, duration)
 end
 
--- SELF DESTRUCT FUNCTIONALITY
-
-local selfDestructCooldown = false
-
-local function playTeleportSound()
-    local teleportSound = Instance.new("Sound", RootPart)
-    teleportSound.SoundId = "rbxassetid://138186576" -- Explosion sound reused for teleport
-    teleportSound.Volume = 0.8
-    teleportSound:Play()
-    Debris:AddItem(teleportSound, 3)
-end
-
-local function selfDestruct()
-    if isSelfDestructActive or selfDestructCooldown then return end
-    isSelfDestructActive = true
-    selfDestructCooldown = true
-
-    -- Play alarm sound
-    nukeAlarmSound:Play()
-    createFloatingText("Self Destruct initiated!", Color3.fromRGB(255, 69, 0), 3)
-
-    wait(2) -- Alarm delay before explosion
-
-    nukeAlarmSound:Stop()
-    nukeExplosionSound:Play()
-
-    -- Damage nearby players
-    local radius = 12
-    local explosion = Instance.new("Explosion")
-    explosion.Position = RootPart.Position
-    explosion.BlastRadius = radius
-    explosion.BlastPressure = 100000
-    explosion.DestroyJointRadiusPercent = 0
-    explosion.ExplosionType = Enum.ExplosionType.NoCraters
-    explosion.Parent = workspace
-
-    -- Boost walk speed for 3 seconds
-    local originalSpeed = Humanoid.WalkSpeed
-    Humanoid.WalkSpeed = 30
-    delay(3, function()
-        if Humanoid then
-            Humanoid.WalkSpeed = originalSpeed
-        end
-    end)
-
-    createFloatingText("Boom! Self Destruct executed", Color3.fromRGB(255, 0, 0), 3)
-
-    wait(1)
-
-    isSelfDestructActive = false
-    wait(10) -- cooldown before reactivation
-    selfDestructCooldown = false
-end
-
-selfDestructBtn.MouseButton1Click:Connect(function()
-    selfDestructEnabled = not selfDestructEnabled
-    if selfDestructEnabled then
-        selfDestructBtn.Text = "Disable Self Destruct"
-        selfDestructBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    else
-        selfDestructBtn.Text = "Enable Self Destruct"
-        selfDestructBtn.BackgroundColor3 = Color3.fromRGB(1, 0.2, 0.2)
-    end
-end)
-
--- Test Self Destruct Button toggle by Dots button
-dotsBtn.MouseButton1Click:Connect(function()
-    dotsBtn.Visible = false
-    selfDestructBtn.Visible = false
-    testSelfDestructBtn.Visible = true
-    closeBtn.Visible = true
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    dotsBtn.Visible = true
-    selfDestructBtn.Visible = true
-    testSelfDestructBtn.Visible = false
-    closeBtn.Visible = false
-end)
-
-testSelfDestructBtn.MouseButton1Click:Connect(function()
-    selfDestruct()
-end)
-
--- DAMAGE TRIGGERED SELF DESTRUCT
-local lastHealth = Humanoid.Health
-
-Humanoid.HealthChanged:Connect(function(newHealth)
-    if not selfDestructEnabled then return end
-    if newHealth < lastHealth then
-        -- Health dropped, trigger self destruct
-        selfDestruct()
-    end
-    lastHealth = newHealth
-end)
-
--- TELEPORT WHEN DAMAGED OBJECT CLOSE
-RunService.Heartbeat:Connect(function()
-    if not selfDestructEnabled then return end
-    -- Check for damage parts near player within 45 studs
-    for _, part in pairs(workspace:GetDescendants()) do
-        if part:IsA("BasePart") and part.Parent ~= Character then
-            if part.Name:lower():find("damage") or part.Name:lower():find("hit") then
-                local dist = (part.Position - RootPart.Position).Magnitude
-                if dist <= 45 then
-                    -- Teleport behind player
-                    local behindPos = getBehindPosition()
-                    RootPart.CFrame = CFrame.new(behindPos)
-                    playTeleportSound()
-                    break
-                end
+-- // Get nearest player
+local function getNearest(radius)
+    local nearest, dist = nil, radius
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local mag = (plr.Character.HumanoidRootPart.Position - root.Position).Magnitude
+            if mag < dist then
+                nearest, dist = plr, mag
             end
         end
     end
+    return nearest
+end
+
+-- // Teleport helper (to position)
+local function teleportTo(pos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    playSound("9118823102", SoundService, 2) -- teleport sound
+    -- Particle effect
+    local emitter = Instance.new("ParticleEmitter", root)
+    emitter.Speed = NumberRange.new(0)
+    emitter.Rate = 50
+    emitter.Lifetime = NumberRange.new(0.5)
+    emitter.Size = NumberSequence.new(1)
+    emitter.Color = ColorSequence.new(Color3.new(1, 1, 0))
+    Debris:AddItem(emitter, 1)
+
+    root.CFrame = CFrame.new(pos)
+end
+
+-- // Self Destruct logic
+local function selfDestruct()
+    if cooldown then return end
+    cooldown = true
+
+    local char = LocalPlayer.Character
+    if not char then cooldown = false return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then cooldown = false return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then cooldown = false return end
+
+    floatText("Self Destruct Initiated!", Color3.fromRGB(255, 0, 0), 3)
+
+    -- Play nuke alarm for 3 seconds
+    playSound("1847092904", root, 3) -- Nuke alarm sound ID, replace with your preferred sound
+    task.wait(3)
+
+    -- Explosion sound + screen orange tint + blind effect
+    playSound("138186576", root, 2) -- Explosion sound
+    local cam = workspace.CurrentCamera
+
+    local cc = Instance.new("ColorCorrectionEffect", cam)
+    cc.Saturation = -1
+    cc.TintColor = Color3.fromRGB(255, 165, 0) -- orange tint
+
+    local guiBlur = Instance.new("BlurEffect", cam)
+    guiBlur.Size = 15
+
+    task.wait(1.32)
+
+    cc:Destroy()
+    guiBlur:Destroy()
+
+    -- Explosion damage effect (for flavor, no damage dealt here)
+    local explosion = Instance.new("Explosion")
+    explosion.Position = root.Position
+    explosion.BlastRadius = 15
+    explosion.BlastPressure = 100000
+    explosion.Parent = workspace
+
+    -- WalkSpeed boost for 3.5 seconds
+    local oldSpeed = humanoid.WalkSpeed
+    humanoid.WalkSpeed = 45
+
+    task.wait(3.5)
+
+    humanoid.WalkSpeed = oldSpeed
+
+    floatText("Self Destruct Complete", Color3.fromRGB(255, 100, 0), 2)
+    cooldown = false
+end
+
+-- // Circle Loop teleport
+local function startCircleLoop()
+    if cooldown then return end
+    cooldown = true
+
+    local char = LocalPlayer.Character
+    if not char then cooldown = false return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then cooldown = false return end
+
+    local angle = 0
+    for _ = 1, 5 do
+        angle += math.pi / 6
+        local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * 60
+        teleportTo(root.Position + offset)
+        task.wait(0.3)
+    end
+    floatText("Circle Loop!", Color3.fromRGB(255, 255, 0), 2)
+
+    task.wait(5)
+    cooldown = false
+end
+
+-- // Teleport behind player (12.5 behind, 3.5 above)
+local function teleportBehind(targetPlayer)
+    if not targetPlayer then return end
+    local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+
+    local behindPos = targetRoot.CFrame.Position - (targetRoot.CFrame.LookVector * 12.5) + Vector3.new(0, 3.5, 0)
+    teleportTo(behindPos)
+    floatText("Poof", Color3.fromRGB(255, 255, 255), 1)
+end
+
+-- // Health check for auto self destruct
+local function setupHealthMonitor()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid")
+
+    humanoid.HealthChanged:Connect(function(health)
+        if not selfDestructEnabled then return end
+        local maxHealth = humanoid.MaxHealth
+        if health <= maxHealth * 0.4 then
+            selfDestruct()
+        end
+    end)
+end
+
+setupHealthMonitor()
+
+-- // Track damage taken for self destruct trigger
+local lastHealth = nil
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    if lastHealth == nil then lastHealth = humanoid.Health end
+
+    local damageTaken = lastHealth - humanoid.Health
+    if damageTaken > 35 and selfDestructEnabled then
+        selfDestruct()
+    end
+    lastHealth = humanoid.Health
 end)
 
--- POSITION FIXING TO ALWAYS BE BEHIND PLAYER
+-- // Create Rayfield UI
 
+local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Rayfield/main/source"))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Behind Ya V1.0",
+    LoadingTitle = "Behind Ya",
+    LoadingSubtitle = "by YourName",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "BehindYaConfig",
+        FileName = "BehindYaSettings"
+    },
+    Discord = {
+        Enabled = false,
+    },
+    KeySystem = false
+})
+
+-- // Main Toggles
+local toggleBehindYa = Window:CreateToggle({
+    Name = "Behind Ya",
+    CurrentValue = false,
+    Flag = "BehindYaToggle",
+    Callback = function(value)
+        active = value
+    end
+})
+
+local toggleSelfDestruct = Window:CreateToggle({
+    Name = "Enable Self Destruct",
+    CurrentValue = false,
+    Flag = "SelfDestructToggle",
+    Callback = function(value)
+        selfDestructEnabled = value
+    end
+})
+
+local toggleCircleLoop = Window:CreateToggle({
+    Name = "Enable Circle Loop",
+    CurrentValue = false,
+    Flag = "CircleLoopToggle",
+    Callback = function(value)
+        circleLoopEnabled = value
+    end
+})
+
+-- // Self Destruct Testing UI
+local selfDestructTestButton = Window:CreateButton({
+    Name = "Test Self Destruct",
+    Callback = function()
+        if cooldown then
+            Rayfield:Notify({
+                Title = "Cooldown",
+                Content = "Please wait for cooldown.",
+                Duration = 3,
+                Image = 0
+            })
+            return
+        end
+        selfDestruct()
+    end
+})
+
+-- // Show/Hide Player Log Movable Window
+local logWindowVisible = false
+local logWindow
+
+local function createLogWindow()
+    if logWindow then return end
+    logWindow = Rayfield:CreateWindow({
+        Name = "Players Log",
+        LoadingTitle = "Players List",
+        LoadingSubtitle = "Movable Window",
+        ConfigurationSaving = {Enabled = false},
+        KeySystem = false
+    })
+    logWindowVisible = true
+
+    local listSection = logWindow:CreateSection("Players")
+
+    local function updatePlayerList()
+        listSection:Clear()
+        for i, p in pairs(Players:GetPlayers()) do
+            listSection:Label(p.Name)
+        end
+    end
+
+    updatePlayerList()
+    Players.PlayerAdded:Connect(updatePlayerList)
+    Players.PlayerRemoving:Connect(updatePlayerList)
+end
+
+local togglePlayerLogButton = Window:CreateButton({
+    Name = "Show/Hide Players Log",
+    Callback = function()
+        if logWindowVisible then
+            if logWindow then
+                logWindow:Destroy()
+                logWindow = nil
+            end
+            logWindowVisible = false
+        else
+            createLogWindow()
+        end
+    end
+})
+
+-- // Main loop to teleport behind nearest player when active
 RunService.Heartbeat:Connect(function()
-    if selfDestructEnabled or enabledCircleLoop then
-        local behindPos = getBehindPosition()
-        RootPart.CFrame = CFrame.new(behindPos, RootPart.Position)
+    if active and not cooldown then
+        local nearestPlayer = getNearest(80)
+        if nearestPlayer then
+            teleportBehind(nearestPlayer)
+            task.wait(0.7)
+        end
     end
 end)
 
--- CHARACTER RESET HANDLING
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-    Character = char
-    Humanoid = Character:WaitForChild("Humanoid")
-    RootPart = Character:WaitForChild("HumanoidRootPart")
-    lastHealth = Humanoid.Health
+-- // Circle Loop automatic run if enabled
+RunService.Heartbeat:Connect(function()
+    if circleLoopEnabled and not cooldown then
+        startCircleLoop()
+    end
 end)
 
--- END OF SCRIPT --
+-- // Notify on script load
+Rayfield:Notify({
+    Title = "Behind Ya",
+    Content = "Successfully executed script! Version 1.0",
+    Duration = 5,
+    Image = 0
+})
