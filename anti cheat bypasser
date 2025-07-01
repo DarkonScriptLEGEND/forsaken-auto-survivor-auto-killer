@@ -1,163 +1,344 @@
--- Mega Client Ultimate Script
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
-local player = Players.LocalPlayer
-local keywords = {"anti","cheat","hack"}
-local forsakenPlaceId = INSERT_FORSAKEN_PLACEID_HERE -- replace!
+local Debris = game:GetService("Debris")
+local UserInputService = game:GetService("UserInputService")
 
--- Remote for FE gun tool
-local remoteName = "Darkon_GiveFEGun"
-if not ReplicatedStorage:FindFirstChild(remoteName) then
-    Instance.new("RemoteEvent", ReplicatedStorage).Name = remoteName
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+local ForsakenPlaceId = 123456789 -- PUT FORSAKEN PLACEID HERE
+
+-- Variables
+local walkSpeed = 45
+local musicNonForsakenId = 18841893567
+local musicForsakenId = 1171745634977
+local teleportSoundId = "rbxassetid://12222242" -- change if you want
+local yellowParticleId = "rbxassetid://243660964"
+
+-- GUI setup
+local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+screenGui.Name = "FullScriptGui"
+screenGui.ResetOnSpawn = false
+
+-- Main Frame
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 300)
+mainFrame.Position = UDim2.new(0, 20, 0, 50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+-- Helper: Create Buttons
+local function createButton(name, pos, color)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Text = name
+    btn.Size = UDim2.new(0, 180, 0, 35)
+    btn.Position = pos
+    btn.BackgroundColor3 = color or Color3.fromRGB(50,50,50)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextScaled = true
+    btn.BorderSizePixel = 0
+    btn.Parent = mainFrame
+    return btn
 end
 
--- Music setup
-local musicGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-musicGui.Name = "DarkonMusicGui"
-local music = Instance.new("Sound", musicGui)
-music.Name = "ZoneMusic"
-music.Looped = true
-music.Priority = Enum.SoundPriority.Contextual
-music.SoundId = "rbxassetid://" ..
-    (game.PlaceId == forsakenPlaceId and "1171745634977" or "18841893567")
-music:Play()
+-- TextLabel for cooldown or info messages
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(1, -10, 0, 25)
+infoLabel.Position = UDim2.new(0, 5, 1, -30)
+infoLabel.BackgroundTransparency = 1
+infoLabel.TextColor3 = Color3.new(0, 1, 0)
+infoLabel.Font = Enum.Font.SourceSansBold
+infoLabel.TextScaled = true
+infoLabel.Text = ""
+infoLabel.Parent = mainFrame
 
--- Anti-cheat removal (no list)
-local function removeAntiCheat()
-    for _,o in ipairs(game:GetDescendants()) do
-        if (o:IsA("Script") or o:IsA("LocalScript") or o:IsA("ModuleScript")) then
-            local n = o.Name:lower()
-            for _,k in ipairs(keywords) do
-                if n:find(k) then pcall(function() o:Destroy() end) break end
+-- Remove Scripts Named "anti", "cheat", "anti cheat", "hack" etc
+local function removeAntiCheatScripts()
+    local deletedScripts = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+            local lowerName = obj.Name:lower()
+            if lowerName:match("anti") or lowerName:match("cheat") or lowerName:match("hack") then
+                table.insert(deletedScripts, obj.Name)
+                obj:Destroy()
             end
         end
     end
+    -- We removed notification per your request
+    -- But you can still log or print if needed
 end
 
--- WalkSpeed maintenance
-local function maintainSpeed()
-    if player.Character and player.Character:FindFirstChild("Humanoid") then
-        player.Character.Humanoid.WalkSpeed = 45
+removeAntiCheatScripts()
+
+-- Equip FE AK-47 that shoots players
+local function giveFEAK47()
+    local character = player.Character or player.CharacterAdded:Wait()
+
+    -- Remove existing gun if any
+    if character:FindFirstChild("FE_AK47") then
+        character.FE_AK47:Destroy()
     end
-end
 
--- FE gun
-local function giveGun() task.wait(1); ReplicatedStorage[remoteName]:FireServer() end
-local function setupShoot()
-    local gun = player.Backpack:WaitForChild("DarkonAK47",5); if not gun then return end
-    local handle = gun:WaitForChild("Handle",5); local snd = handle:WaitForChild("FireSound",5)
-    local mouse = player:GetMouse()
-    local cooling = false
-    gun.Equipped:Connect(function()
-        mouse.Button1Down:Connect(function()
-            if cooling then return end
-            cooling = true; snd:Play()
-            local origin = handle.Position
-            local dir = (mouse.Hit.p-origin).Unit*300
-            local hit,pos = workspace:FindPartOnRay(Ray.new(origin,dir),player.Character)
-            local beam = Instance.new("Part",workspace)
-            beam.Anchored,beam.CanCollide = true,false
-            beam.Size = Vector3.new(0.2,0.2,(origin-pos).Magnitude)
-            beam.CFrame = CFrame.new(origin,pos)*CFrame.new(0,0,-beam.Size.Z/2)
-            beam.Material,beam.BrickColor = Enum.Material.Neon,BrickColor.new("Bright yellow")
-            Debris:AddItem(beam,0.15)
-            if hit and hit.Parent then
-                local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
-                if hum then hum.Health = hum.Health - 25 end
+    -- Create Gun Model
+    local gun = Instance.new("Part")
+    gun.Name = "FE_AK47"
+    gun.Size = Vector3.new(1,1,4)
+    gun.Color = Color3.fromRGB(50, 50, 50)
+    gun.Material = Enum.Material.Metal
+    gun.CanCollide = false
+    gun.Parent = character
+
+    -- Weld gun to right hand
+    local rightHand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+    if rightHand then
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = gun
+        weld.Part1 = rightHand
+        weld.Parent = gun
+        gun.CFrame = rightHand.CFrame * CFrame.new(0, 0, -1.5)
+    end
+
+    -- Shoot function
+    local debounce = false
+    local fireRate = 0.15
+
+    mouse.Button1Down:Connect(function()
+        if debounce then return end
+        debounce = true
+
+        local ray = Ray.new(gun.Position, (mouse.Hit.p - gun.Position).unit * 500)
+        local hitPart, hitPos = workspace:FindPartOnRayWithIgnoreList(ray, {character, gun})
+
+        if hitPart and hitPart.Parent and Players:FindFirstChild(hitPart.Parent.Name) then
+            local victim = Players[hitPart.Parent.Name]
+            local humanoid = hitPart.Parent:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                humanoid:TakeDamage(10)
             end
-            task.delay(0.12, function() cooling = false end)
-        end)
+        end
+
+        debounce = false
     end)
 end
 
--- Follow-player movement effect
-local following = false
-local trail = Instance.new("ParticleEmitter")
-trail.Texture = "rbxassetid://243660964" -- yellow-like particle
-trail.Rate = 50
-trail.Lifetime = NumberRange.new(0.3)
-trail.Speed = NumberRange.new(0,1)
-trail.Parent = nil
-
-local function toggleFollow()
-    following = not following
-    if not following then
-        trail.Enabled = false
-    end
+-- Ensure gun and walkspeed persist after respawn
+local function setupCharacter(character)
+    character:WaitForChild("Humanoid").WalkSpeed = walkSpeed
+    giveFEAK47()
 end
 
--- Update follow movement each frame
-RunService.RenderStepped:Connect(function()
-    maintainSpeed()
-    if player.Character and following then
-        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            trail.Parent = hrp
-            trail.Enabled = true
-            -- find nearest
-            local nearest, dist = nil, math.huge
-            for _,pl in ipairs(Players:GetPlayers()) do
-                if pl ~= player and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                    local d = (hrp.Position - pl.Character.HumanoidRootPart.Position).Magnitude
-                    if d < dist then dist, nearest = d, pl end
+player.CharacterAdded:Connect(setupCharacter)
+if player.Character then
+    setupCharacter(player.Character)
+end
+
+-- Music player
+local sound = Instance.new("Sound", workspace)
+sound.Volume = 0.3
+sound.Looped = true
+
+local function playMusic()
+    if game.PlaceId == ForsakenPlaceId then
+        sound.SoundId = "rbxassetid://"..musicForsakenId
+    else
+        sound.SoundId = "rbxassetid://"..musicNonForsakenId
+    end
+    sound:Play()
+end
+playMusic()
+
+-- Play/pause toggle button for music
+local musicBtn = createButton("Play/Pause Music", UDim2.new(0, 20, 0, 5), Color3.fromRGB(100,100,255))
+local musicPlaying = true
+
+musicBtn.MouseButton1Click:Connect(function()
+    if musicPlaying then
+        sound:Pause()
+        musicBtn.Text = "Play Music"
+    else
+        sound:Play()
+        musicBtn.Text = "Pause Music"
+    end
+    musicPlaying = not musicPlaying
+end)
+
+-- Particle helper
+local function createYellowParticles(pos)
+    local part = Instance.new("Part")
+    part.Anchored = true
+    part.CanCollide = false
+    part.Transparency = 1
+    part.Size = Vector3.new(1,1,1)
+    part.CFrame = CFrame.new(pos)
+    part.Parent = workspace
+
+    local emitter = Instance.new("ParticleEmitter", part)
+    emitter.Texture = yellowParticleId
+    emitter.Rate = 50
+    emitter.Lifetime = NumberRange.new(0.4)
+    emitter.Speed = NumberRange.new(3)
+    emitter:Emit(40)
+
+    Debris:AddItem(part, 1)
+end
+
+-- Teleport sound helper
+local function playTeleportSound(pos)
+    local soundPart = Instance.new("Part")
+    soundPart.Anchored = true
+    soundPart.CanCollide = false
+    soundPart.Transparency = 1
+    soundPart.Position = pos
+    soundPart.Parent = workspace
+
+    local s = Instance.new("Sound", soundPart)
+    s.SoundId = teleportSoundId
+    s.Volume = 1
+    s:Play()
+    Debris:AddItem(soundPart, 2)
+end
+
+-- Safe position check
+local function isSafePosition(pos)
+    if pos.Y < 5 then return false end
+    local ray = Ray.new(pos + Vector3.new(0,5,0), Vector3.new(0,-10,0))
+    local hit = workspace:FindPartOnRay(ray)
+    if not hit then return false end
+
+    local region = Region3.new(pos - Vector3.new(2,2,2), pos + Vector3.new(2,2,2))
+    local parts = workspace:FindPartsInRegion3WithIgnoreList(region, {player.Character}, 10)
+    for _, part in pairs(parts) do
+        if part.CanCollide and part:IsDescendantOf(workspace) then
+            return false
+        end
+    end
+    return true
+end
+
+-- Find furthest safe position around player (radius 100 studs)
+local function findFurthestSafePosition()
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local startPos = hrp.Position
+    local furthestPos = startPos
+    local maxDist = 0
+    local radius = 100
+
+    for angle=0, 360, 15 do
+        for dist=50, radius, 10 do
+            local rad = math.rad(angle)
+            local candidate = startPos + Vector3.new(math.cos(rad)*dist, 0, math.sin(rad)*dist)
+            if isSafePosition(candidate) then
+                local distToStart = (candidate - startPos).Magnitude
+                if distToStart > maxDist then
+                    maxDist = distToStart
+                    furthestPos = candidate
                 end
             end
-            if nearest then
-                hrp.CFrame = hrp.CFrame:Lerp(nearest.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,3), 0.1)
-            end
         end
     end
-end)
 
--- Key binds
-local uis = game:GetService("UserInputService")
-uis.InputBegan:Connect(function(inp, g)
-    if g then return end
-    if inp.KeyCode == Enum.KeyCode.F then toggleFollow()
-    elseif inp.KeyCode == Enum.KeyCode.P then
-        if music.IsPlaying then music:Pause()
-        else music:Play()
-    end
-    -- Anti-cheat removal manual
-    if inp.KeyCode == Enum.KeyCode.R then removeAntiCheat()
-    end
-end)
-
--- Server injection for FE gun
-if RunService:IsServer() then
-    local remote = ReplicatedStorage[remoteName]
-    remote.OnServerEvent:Connect(function(plr)
-        if plr.Backpack:FindFirstChild("DarkonAK47") then return end
-        local tool = Instance.new("Tool")
-        tool.Name = "DarkonAK47"; tool.RequiresHandle = true; tool.CanBeDropped = false
-        local handle = Instance.new("Part", tool)
-        handle.Name="Handle"; handle.Size=Vector3.new(1,1,3); handle.BrickColor=BrickColor.new("Really black")
-        local snd = Instance.new("Sound", handle)
-        snd.Name="FireSound"; snd.SoundId="rbxassetid://12222242"; snd.Volume=1
-        tool.Parent = plr.Backpack
-    end)
+    return furthestPos
 end
 
--- Initialization
-giveGun()
-setupShoot()
-removeAntiCheat()
-music:Play()
+-- Teleport player to position with effects
+local function teleportPlayerTo(pos)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
 
-player.CharacterAdded:Connect(function()
-    task.wait(1)
-    maintainSpeed()
-    giveGun()
-    setupShoot()
+    createYellowParticles(hrp.Position)
+    playTeleportSound(hrp.Position)
+    hrp.CFrame = CFrame.new(pos.X, pos.Y + 3, pos.Z)
+    createYellowParticles(pos)
+end
+
+-- Teleport to Furthest button
+local teleportBtn = createButton("Teleport To Furthest", UDim2.new(0, 20, 0, 50), Color3.fromRGB(255,165,0))
+teleportBtn.MouseButton1Click:Connect(function()
+    local pos = findFurthestSafePosition()
+    if pos then
+        teleportPlayerTo(pos)
+        infoLabel.Text = "Teleported to furthest location!"
+        wait(3)
+        infoLabel.Text = ""
+    else
+        infoLabel.Text = "No safe location found."
+        wait(3)
+        infoLabel.Text = ""
+    end
 end)
 
--- Loop tasks
-spawn(function()
-    while true do
-        task.wait(15)
-        removeAntiCheat()
-        maintainSpeed()
+-- Hide GUI button
+local hideBtn = createButton("Hide GUI", UDim2.new(0, 20, 0, 95))
+local guiHidden = false
+hideBtn.MouseButton1Click:Connect(function()
+    guiHidden = not guiHidden
+    mainFrame.Visible = not guiHidden
+end)
+
+-- Follow Player button (toggle)
+local followBtn = createButton("Follow Player", UDim2.new(0, 20, 0, 140), Color3.fromRGB(255, 215, 0))
+local followEnabled = false
+
+local function safeTeleportTowards(targetPos)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local dir = (targetPos - hrp.Position)
+    local moveVector = dir.Unit * math.min(dir.Magnitude, 15) -- move max 15 studs per teleport
+    local newPos = hrp.Position + Vector3.new(moveVector.X, 0, moveVector.Z)
+
+    if isSafePosition(newPos) then
+        teleportPlayerTo(newPos)
+    end
+end
+
+local followTarget
+
+followBtn.MouseButton1Click:Connect(function()
+    followEnabled = not followEnabled
+    followBtn.BackgroundColor3 = followEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 215, 0)
+    followBtn.Text = followEnabled and "Following ON" or "Follow Player"
+
+    if followEnabled then
+        -- Ask for target player (simplest method: nearest player)
+        local nearestDist = math.huge
+        local nearestPlayer = nil
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (plr.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearestPlayer = plr
+                end
+            end
+        end
+        followTarget = nearestPlayer
+
+        if not followTarget then
+            infoLabel.Text = "No player to follow."
+            wait(3)
+            infoLabel.Text = ""
+            followEnabled = false
+            followBtn.BackgroundColor3 = Color3.fromRGB(255, 215, 0)
+            followBtn.Text = "Follow Player"
+            return
+        end
+
+        infoLabel.Text = "Following " .. followTarget.Name
+    else
+        infoLabel.Text = "Stopped following."
+    end
+end)
+
+-- Follow loop
+RunService.Heartbeat:Connect(function()
+    if followEnabled and followTarget and followTarget.Character and followTarget.Character:FindFirstChild("HumanoidRootPart") then
+        safeTeleportTowards(followTarget.Character.HumanoidRootPart.Position)
+        createYellowParticles(player.Character.HumanoidRootPart.Position)
     end
 end)
