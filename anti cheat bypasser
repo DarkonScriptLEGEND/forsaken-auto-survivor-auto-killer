@@ -1,135 +1,168 @@
+--// Services
 local Players = game:GetService("Players")
-local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+local SoundService = game:GetService("SoundService")
+local LocalPlayer = Players.LocalPlayer
 
-local player = Players.LocalPlayer
+--// Variables
+local active = false
+local viewing = nil
+local cooldown = false
+local circleLoopEnabled = false
+local selfDestructEnabled = false
 
-local TELEPORT_SOUND_ID = "rbxassetid://9118820499"
-local FOLLOW_PARTICLE_COLOR = Color3.fromRGB(255, 221, 51)
-
--- GUI Setup
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TeleportFurthestGui"
-ScreenGui.Parent = player:WaitForChild("PlayerGui")
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 230, 0, 50)
-mainFrame.Position = UDim2.new(0, 20, 0.4, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = ScreenGui
-
-local teleportBtn = Instance.new("TextButton")
-teleportBtn.Size = UDim2.new(1, -20, 1, -10)
-teleportBtn.Position = UDim2.new(0, 10, 0, 5)
-teleportBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 0) -- Orange
-teleportBtn.TextColor3 = Color3.new(1,1,1)
-teleportBtn.Font = Enum.Font.SourceSansBold
-teleportBtn.TextSize = 18
-teleportBtn.Text = "Teleport To Furthest"
-teleportBtn.Parent = mainFrame
-
-local function playTeleportSound(pos)
-    local sound = Instance.new("Sound")
-    sound.SoundId = TELEPORT_SOUND_ID
-    sound.Volume = 0.75
-    sound.PlayOnRemove = true
-    sound.Parent = workspace
-    sound.Position = pos or Vector3.new()
-    sound:Destroy()
+--// Sound Setup
+local function playSound(id, volume)
+	local sound = Instance.new("Sound", SoundService)
+	sound.SoundId = "rbxassetid://" .. id
+	sound.Volume = volume or 1
+	sound:Play()
+	Debris:AddItem(sound, 5)
 end
 
-local function spawnParticles(position)
-    local part = Instance.new("Part")
-    part.Anchored = true
-    part.CanCollide = false
-    part.Transparency = 1
-    part.Position = position
-    part.Size = Vector3.new(1,1,1)
-    part.Parent = workspace
+--// Floating Text
+local function floatText(text, color, duration)
+	local billboard = Instance.new("BillboardGui", LocalPlayer.Character)
+	billboard.Size = UDim2.new(0, 200, 0, 50)
+	billboard.StudsOffset = Vector3.new(0, 4, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
-    local particle = Instance.new("ParticleEmitter")
-    particle.Texture = "rbxassetid://243660364"
-    particle.Color = ColorSequence.new(FOLLOW_PARTICLE_COLOR)
-    particle.LightEmission = 1
-    particle.Size = NumberSequence.new(1)
-    particle.Rate = 100
-    particle.Lifetime = NumberRange.new(0.5)
-    particle.Speed = NumberRange.new(2, 4)
-    particle.Parent = part
+	local label = Instance.new("TextLabel", billboard)
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = color
+	label.TextScaled = true
 
-    Debris:AddItem(part, 1)
+	Debris:AddItem(billboard, duration)
 end
 
--- Use RaycastParams to check if spot is safe (no walls or obstacles blocking)
-local function isSafePosition(pos)
-    local rayParams = RaycastParams.new()
-    rayParams.FilterDescendantsInstances = {player.Character}
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-    rayParams.IgnoreWater = true
-
-    -- Raycast down to find ground
-    local raycastResult = workspace:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -100, 0), rayParams)
-    if not raycastResult then return false end
-    local groundPos = raycastResult.Position
-
-    -- Check if there is enough space above ground
-    local region = Region3.new(groundPos - Vector3.new(2, 0, 2), groundPos + Vector3.new(2, 5, 2))
-    local partsInRegion = workspace:FindPartsInRegion3WithIgnoreList(region, {player.Character}, 10)
-    for _, part in pairs(partsInRegion) do
-        if part.CanCollide and part.Transparency < 1 then
-            return false
-        end
-    end
-
-    -- Position is safe, return the ground position + a small Y offset
-    return groundPos + Vector3.new(0, 3, 0)
+--// Particles
+local function spawnParticles(part)
+	local emitter = Instance.new("ParticleEmitter", part)
+	emitter.Speed = NumberRange.new(0, 0)
+	emitter.Rate = 50
+	emitter.Lifetime = NumberRange.new(0.5)
+	emitter.Size = NumberSequence.new(1)
+	emitter.Color = ColorSequence.new(Color3.new(1, 1, 0))
+	Debris:AddItem(emitter, 1)
 end
 
--- Find furthest safe position on a circle of radius 60 around player
-local function findFurthestSafePosition()
-    local character = player.Character
-    if not character then return nil end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local origin = hrp.Position
-
-    local furthestPos = nil
-    local maxDist = 0
-    local radius = 60
-
-    for angle = 0, 360, 5 do
-        local rad = math.rad(angle)
-        local testPos = origin + Vector3.new(math.cos(rad) * radius, 0, math.sin(rad) * radius)
-        local safePos = isSafePosition(testPos)
-        if safePos then
-            local dist = (safePos - origin).Magnitude
-            if dist > maxDist then
-                maxDist = dist
-                furthestPos = safePos
-            end
-        end
-    end
-    return furthestPos
+--// Get Nearest Player
+local function getNearest(radius)
+	local nearest, dist = nil, radius
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local mag = (plr.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+			if mag < dist then
+				nearest, dist = plr, mag
+			end
+		end
+	end
+	return nearest
 end
 
-local function teleportPlayerTo(pos)
-    local character = player.Character
-    if not character then return end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    spawnParticles(hrp.Position)
-    hrp.CFrame = CFrame.new(pos)
-    spawnParticles(pos)
-    playTeleportSound(pos)
+--// Teleport Logic
+local function teleportTo(pos)
+	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	playSound("9118823102", 2)
+	spawnParticles(root)
+	root.CFrame = CFrame.new(pos)
 end
 
-teleportBtn.MouseButton1Click:Connect(function()
-    local pos = findFurthestSafePosition()
-    if pos then
-        teleportPlayerTo(pos)
-    else
-        warn("No safe location found!")
-    end
+--// Circle Loop
+local function startCircleLoop()
+	if cooldown then return end
+	cooldown = true
+	local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	local angle = 0
+	for _ = 1, 5 do
+		angle += math.pi / 6
+		local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * 60
+		teleportTo(root.Position + offset)
+		task.wait(0.3)
+	end
+	floatText("Circle Loop!", Color3.fromRGB(255, 255, 0), 2)
+	task.wait(5)
+	cooldown = false
+end
+
+--// Self Destruct
+local function startSelfDestruct()
+	if cooldown then return end
+	cooldown = true
+	floatText("Self Destruct!", Color3.fromRGB(255, 0, 0), 2)
+	for _ = 1, 12 do
+		teleportTo(LocalPlayer.Character.HumanoidRootPart.Position + Vector3.new(0, 30, 0))
+		playSound("7489482123", 1)
+		task.wait(0.2)
+	end
+	cooldown = false
+end
+
+--// GUI Setup
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.Name = "BehindYaMini"
+gui.ResetOnSpawn = false
+
+local toggleBtn = Instance.new("TextButton", gui)
+toggleBtn.Size = UDim2.new(0, 180, 0, 30)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.Text = "Behind Ya: OFF"
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 255)
+toggleBtn.MouseButton1Click:Connect(function()
+	active = not active
+	toggleBtn.Text = active and "Behind Ya: ON" or "Behind Ya: OFF"
+	toggleBtn.BackgroundColor3 = active and Color3.fromRGB(255, 255, 0) or Color3.fromRGB(0, 0, 255)
+end)
+
+local selfBtn = Instance.new("TextButton", gui)
+selfBtn.Size = UDim2.new(0, 180, 0, 30)
+selfBtn.Position = UDim2.new(0, 10, 0, 45)
+selfBtn.Text = "Enable Self Destruct"
+selfBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+selfBtn.MouseButton1Click:Connect(function()
+	selfDestructEnabled = not selfDestructEnabled
+	selfBtn.Text = selfDestructEnabled and "Self Destruct: ON" or "Enable Self Destruct"
+end)
+
+local loopBtn = Instance.new("TextButton", gui)
+loopBtn.Size = UDim2.new(0, 180, 0, 30)
+loopBtn.Position = UDim2.new(0, 10, 0, 80)
+loopBtn.Text = "Enable Circle Loop"
+loopBtn.BackgroundColor3 = Color3.fromRGB(255, 180, 80)
+loopBtn.MouseButton1Click:Connect(function()
+	circleLoopEnabled = not circleLoopEnabled
+	loopBtn.Text = circleLoopEnabled and "Circle Loop: ON" or "Enable Circle Loop"
+end)
+
+--// Main Loop
+RunService.Heartbeat:Connect(function()
+	if not active or cooldown then return end
+
+	local target = getNearest(85)
+	if target then
+		local root = target.Character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local behindPos = root.Position - root.CFrame.LookVector * 45
+			teleportTo(behindPos)
+			floatText("Poof", Color3.fromRGB(255, 255, 255), 1)
+			task.wait(2.3)
+		end
+	end
+
+	local closeEnemy = getNearest(35)
+	if selfDestructEnabled and closeEnemy then
+		task.wait(0.75)
+		startSelfDestruct()
+	end
+
+	local farEnemy = getNearest(195)
+	if circleLoopEnabled and farEnemy then
+		startCircleLoop()
+	end
 end)
