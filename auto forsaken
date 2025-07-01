@@ -1,155 +1,212 @@
--- SERVICES
+-- Services
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
 
 local localPlayer = Players.LocalPlayer
 local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local hrp = character:WaitForChild("HumanoidRootPart")
 
--- GUI
+-- GUI Setup
 local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "AutoSurvivorUI"
-
-local btn = Instance.new("TextButton", gui)
-btn.Size = UDim2.new(0, 200, 0, 50)
-btn.Position = UDim2.new(0, 10, 0, 10)
-btn.Text = "Auto Survivor: OFF"
-btn.BackgroundColor3 = Color3.fromRGB(80, 80, 255)
-btn.TextColor3 = Color3.new(1,1,1)
-btn.Font = Enum.Font.SourceSansBold
-btn.TextSize = 20
-
--- VARIABLES
-local enabled = false
-local killer = nil
-local resting = false
-local cooldown = false
-
--- FUNCTIONS
-function notify(msg)
-	StarterGui:SetCore("SendNotification", {
-		Title = "Auto Survivor",
-		Text = msg,
-		Duration = 3
-	})
+gui.Name = "ForsakenAI"
+local function newBtn(name, posY)
+    local b = Instance.new("TextButton", gui)
+    b.Size = UDim2.new(0,180,0,35)
+    b.Position = UDim2.new(0,10,0,posY)
+    b.Text = name
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 18
+    b.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    b.TextColor3 = Color3.new(1,1,1)
+    return b
 end
+local survivorBtn = newBtn("Auto Survivor: OFF", 10)
+local killerBtn    = newBtn("Auto Killer: OFF",    55)
+local genBtn       = newBtn("Auto Generator: OFF",100)
 
-function getGenerators()
-	local gens = {}
-	for _, obj in pairs(Workspace:GetDescendants()) do
-		if obj:IsA("Model") and obj.Name:lower():find("generator") then
-			table.insert(gens, obj)
-		end
-	end
-	return gens
-end
+-- State
+local modeSurvivor = false
+local modeKiller    = false
+local modeGenerator = false
 
-function getKiller()
-	for _, plr in pairs(Players:GetPlayers()) do
-		if plr ~= localPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-			local h = plr.Character:FindFirstChildOfClass("Humanoid")
-			if h and h.Health > 0 then
-				return plr
-			end
-		end
-	end
-	return nil
-end
-
-function esp(target)
-	if target and not target.Character.Head:FindFirstChild("ESP") then
-		local tag = Instance.new("BillboardGui", target.Character.Head)
-		tag.Name = "ESP"
-		tag.Size = UDim2.new(4,0,1,0)
-		tag.AlwaysOnTop = true
-		local text = Instance.new("TextLabel", tag)
-		text.Size = UDim2.new(1,0,1,0)
-		text.BackgroundTransparency = 1
-		text.Text = "KILLER"
-		text.TextColor3 = Color3.fromRGB(255,0,0)
-		text.TextScaled = true
-	end
-end
-
-function runFromKiller()
-	if not killer or not killer.Character then return end
-	local kHRP = killer.Character:FindFirstChild("HumanoidRootPart")
-	if not kHRP then return end
-
-	local away = hrp.Position + (hrp.Position - kHRP.Position).Unit * 70
-	local path = PathfindingService:CreatePath()
-	path:ComputeAsync(hrp.Position, away)
-	if path.Status == Enum.PathStatus.Complete then
-		for _, waypoint in pairs(path:GetWaypoints()) do
-			humanoid:MoveTo(waypoint.Position)
-			humanoid.MoveToFinished:Wait()
-			if not enabled then return end
-			if (hrp.Position - kHRP.Position).Magnitude > 100 then break end
-		end
-	end
-end
-
-function goToGenerator()
-	local gens = getGenerators()
-	if #gens == 0 then return end
-	local closest
-	local dist = math.huge
-	for _, gen in pairs(gens) do
-		if gen:FindFirstChild("Part") then
-			local d = (gen.Part.Position - hrp.Position).Magnitude
-			if d < dist then
-				dist = d
-				closest = gen.Part.Position
-			end
-		end
-	end
-	if closest then
-		local path = PathfindingService:CreatePath()
-		path:ComputeAsync(hrp.Position, closest)
-		if path.Status == Enum.PathStatus.Complete then
-			for _, waypoint in pairs(path:GetWaypoints()) do
-				humanoid:MoveTo(waypoint.Position)
-				humanoid.MoveToFinished:Wait()
-				if not enabled then return end
-			end
-		end
-	end
-end
-
-function checkStamina()
-	if humanoid.WalkSpeed < 10 then
-		resting = true
-		wait(2.5)
-		resting = false
-	end
-end
-
--- MAIN LOOP
-RunService.Heartbeat:Connect(function()
-	if not enabled then return end
-	killer = getKiller()
-	if killer then esp(killer) end
-
-	local distance = (killer and killer.Character and killer.Character:FindFirstChild("HumanoidRootPart"))
-		and (hrp.Position - killer.Character.HumanoidRootPart.Position).Magnitude or math.huge
-
-	if resting or cooldown then return end
-	if distance < 40 then
-		runFromKiller()
-	elseif distance < 90 then
-		goToGenerator()
-	end
-	checkStamina()
+-- Anti-AFK
+game:GetService("UserInputService").IdleChanged:Connect(function(idle)
+    if idle then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
 end)
 
--- TOGGLE
-btn.MouseButton1Click:Connect(function()
-	enabled = not enabled
-	btn.Text = enabled and "Auto Survivor: ON" or "Auto Survivor: OFF"
-	btn.BackgroundColor3 = enabled and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,0,0)
-	notify(enabled and "Auto Survivor Activated" or "Auto Survivor Deactivated")
+-- ESP
+local function highlightChar(ch,clr)
+    if ch:FindFirstChild("Highlight") then return end
+    local hl = Instance.new("Highlight",ch)
+    hl.FillColor = clr
+    hl.OutlineTransparency = 1
+    game.Debris:AddItem(hl,1)
+end
+
+-- Spawn listener
+local function refreshChar()
+    character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+    humanoid = character:WaitForChild("Humanoid")
+    hrp = character:WaitForChild("HumanoidRootPart")
+end
+Players.PlayerAdded:Connect(refreshChar)
+Players.PlayerRemoving:Connect(refreshChar)
+
+-- Finder functions
+local function findKillers()
+    local found = {}
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr~=localPlayer and plr.Character then
+            if plr.Team and plr.Team.Name:lower():find("killer") then
+                table.insert(found, plr.Character)
+            end
+        end
+    end
+    return found
+end
+local function findSurvivors()
+    local found = {}
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr~=localPlayer and plr.Character then
+            if plr.Team and plr.Team.Name:lower():find("survivor") then
+                table.insert(found, plr.Character)
+            end
+        end
+    end
+    return found
+end
+local function findGeneratorParts()
+    local gens = {}
+    for _,obj in pairs(Workspace:GetDescendants()) do
+        if obj.Name:lower():find("generator") and obj:IsA("BasePart") then
+            table.insert(gens,obj)
+        end
+    end
+    return gens
+end
+
+-- Pathing
+local function walkTo(pos)
+    if humanoid.Health<=0 then return end
+    local path = PathfindingService:CreatePath({
+        AgentRadius=2,AgentHeight=5,AgentCanClimb=true,AgentCanJump=true
+    })
+    path:ComputeAsync(hrp.Position,pos)
+    if path.Status==Enum.PathStatus.Success then
+        for _,wp in ipairs(path:GetWaypoints()) do
+            humanoid:MoveTo(wp.Position)
+            humanoid.MoveToFinished:Wait()
+            if not(modeSurvivor or modeKiller or modeGenerator) then return end
+        end
+    else
+        humanoid:MoveTo(pos)
+    end
+end
+
+-- Survivor AI
+local lastSprint = 0
+local sprintCooldown = 4
+local function survivorAI()
+    local killers = findKillers()
+    for _,ch in pairs(killers) do
+        highlightChar(ch,Color3.new(1,0,0))
+        local kr = ch:FindFirstChild("HumanoidRootPart")
+        if kr then
+            local dist = (kr.Position - hrp.Position).Magnitude
+            if dist<60 then
+                if tick()-lastSprint > sprintCooldown then
+                    humanoid.WalkSpeed = 24
+                    lastSprint = tick()
+                else
+                    humanoid.WalkSpeed = 16
+                end
+                local flee = hrp.Position + (hrp.Position-kr.Position).Unit * 40
+                walkTo(flee)
+                return
+            end
+        end
+    end
+
+    if modeGenerator then
+        local gens = findGeneratorParts()
+        local best,md= nil,math.huge
+        for _,g in pairs(gens) do
+            local d=(g.Position-hrp.Position).Magnitude
+            if d<md then md, best = d, g end
+        end
+        if best then
+            highlightChar(best.Parent or best,Color3.new(0,1,0))
+            walkTo(best.Position)
+            return
+        end
+    end
+    -- roam a bit
+    local dir = Vector3.new(math.random(-1,1),0,math.random(-1,1)).Unit*5
+    walkTo(hrp.Position+dir)
+end
+
+-- Killer AI
+local lastAttack = 0
+local atkCooldown = 4
+local function killerAI()
+    local survs = findSurvivors()
+    for _,ch in pairs(survs) do
+        highlightChar(ch,Color3.new(0,0,1))
+        local pr = ch:FindFirstChild("HumanoidRootPart")
+        if pr then
+            walkTo(pr.Position)
+            if tick()-lastAttack>atkCooldown and (pr.Position-hrp.Position).Magnitude<5 then
+                lastAttack = tick()
+                local tool = character:FindFirstChildOfClass("Tool")
+                if tool and tool:FindFirstChild("RemoteEvent") then
+                    tool.RemoteEvent:FireServer()
+                end
+            end
+            return
+        end
+    end
+end
+
+-- Toggle callbacks
+survivorBtn.MouseButton1Click:Connect(function()
+    modeSurvivor = not modeSurvivor
+    if modeSurvivor then
+        modeKiller = false
+        survivorBtn.Text = "Auto Survivor: ON"
+        killerBtn.Text = "Auto Killer: OFF"
+    else
+        survivorBtn.Text = "Auto Survivor: OFF"
+    end
+end)
+killerBtn.MouseButton1Click:Connect(function()
+    modeKiller = not modeKiller
+    if modeKiller then
+        modeSurvivor = false
+        killerBtn.Text = "Auto Killer: ON"
+        survivorBtn.Text = "Auto Survivor: OFF"
+    else
+        killerBtn.Text = "Auto Killer: OFF"
+    end
+end)
+genBtn.MouseButton1Click:Connect(function()
+    modeGenerator = not modeGenerator
+    genBtn.Text = "Auto Generator: " .. (modeGenerator and "ON" or "OFF")
+end)
+
+-- Main loop
+RunService.Heartbeat:Connect(function()
+    if modeSurvivor and humanoid.Health>0 then
+        survivorAI()
+    elseif modeKiller and humanoid.Health>0 then
+        killerAI()
+    end
+    humanoid.WalkSpeed = humanoid.WalkSpeed or 16
 end)
