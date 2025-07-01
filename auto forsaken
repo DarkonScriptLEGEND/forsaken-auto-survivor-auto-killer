@@ -1,201 +1,288 @@
---// SERVICES
+--// Services
 local Players = game:GetService("Players")
-local PathfindingService = game:GetService("PathfindingService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Teams = game:GetService("Teams")
+local PathfindingService = game:GetService("PathfindingService")
+local StarterGui = game:GetService("StarterGui")
+
 local LocalPlayer = Players.LocalPlayer
+local Character = nil
+local Humanoid = nil
+local HumanoidRootPart = nil
 
---// VARIABLES
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
-local Stamina = Humanoid:FindFirstChild("Stamina") or Instance.new("NumberValue", Humanoid) -- replace if different
+--// Variables
+local autoSurvivorEnabled = false
+local autoKillerEnabled = false
+local antiCheatRemoved = false
 
-local autoSurvivor = false
-local autoKiller = false
+--// Utility Functions
+local function inMatch()
+    -- Check workspace RoundActive BoolValue
+    local roundActive = Workspace:FindFirstChild("RoundActive")
+    if roundActive and roundActive:IsA("BoolValue") and roundActive.Value then
+        return true
+    end
 
---// GUI
-local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "ForsakenAI"
+    -- Check workspace GameState/RoundActive BoolValue
+    local gameState = Workspace:FindFirstChild("GameState")
+    if gameState then
+        local roundBool = gameState:FindFirstChild("RoundActive")
+        if roundBool and roundBool:IsA("BoolValue") and roundBool.Value then
+            return true
+        end
+    end
 
-local function createButton(name, posY)
-	local btn = Instance.new("TextButton", gui)
-	btn.Size = UDim2.new(0, 180, 0, 35)
-	btn.Position = UDim2.new(0, 10, 0, posY)
-	btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Text = name
-	return btn
+    -- Check ReplicatedStorage MatchState IntValue > 0
+    local repMatchState = ReplicatedStorage:FindFirstChild("MatchState")
+    if repMatchState and repMatchState:IsA("IntValue") and repMatchState.Value > 0 then
+        return true
+    end
+
+    -- Fallback: Check Teams for killer & survivor presence
+    local killers = 0
+    local survivors = 0
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Team then
+            local teamName = player.Team.Name:lower()
+            if teamName:find("killer") then
+                killers = killers + 1
+            elseif teamName:find("survivor") then
+                survivors = survivors + 1
+            end
+        end
+    end
+    if killers > 0 and survivors > 0 then
+        return true
+    end
+
+    return false
 end
 
-local autoSurvivorBtn = createButton("Auto Survivor: OFF", 10)
-local autoKillerBtn = createButton("Auto Killer: OFF", 50)
-
---// UTILS
-
-local function inMatch()
-	-- Customize per your game logic
-	return workspace:FindFirstChild("Match") ~= nil
+local function getCharacter()
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 end
 
 local function isKiller()
-	local team = LocalPlayer.Team
-	return team and team.Name == "Killer"
+    if LocalPlayer.Team and LocalPlayer.Team.Name:lower():find("killer") then
+        return true
+    end
+    return false
 end
 
-local function isSurvivor()
-	local team = LocalPlayer.Team
-	return team and team.Name == "Survivor"
+local function removeAntiCheatScripts()
+    if antiCheatRemoved then return end
+    for _, scr in pairs(getloadedmodules and getloadedmodules() or {}) do
+        local name = scr.Name:lower()
+        if name:find("cheat") or name:find("anti") or name:find("cheater") then
+            pcall(function() package.loaded[scr] = nil end)
+        end
+    end
+    for _, scr in pairs(Workspace:GetChildren()) do
+        if scr:IsA("Script") or scr:IsA("LocalScript") then
+            local name = scr.Name:lower()
+            if name:find("cheat") or name:find("anti") or name:find("cheater") then
+                pcall(function() scr:Destroy() end)
+            end
+        end
+    end
+    antiCheatRemoved = true
 end
 
-local function findNearestPlayer(teamName)
-	local nearest = nil
-	local nearestDist = math.huge
-	for _, player in pairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Team and player.Team.Name == teamName and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			local dist = (player.Character.HumanoidRootPart.Position - RootPart.Position).Magnitude
-			if dist < nearestDist then
-				nearestDist = dist
-				nearest = player.Character.HumanoidRootPart
-			end
-		end
-	end
-	return nearest, nearestDist
+local function runAwayFromKiller(killerPos)
+    -- Pathfind to a point away from killer, randomize direction a bit
+    if not HumanoidRootPart then return end
+    local direction = (HumanoidRootPart.Position - killerPos).Unit
+    local fleeDistance = 40 + math.random(5, 15)
+    local targetPos = HumanoidRootPart.Position + direction * fleeDistance
+
+    -- Ensure targetPos is on the map (try to get ground position)
+    local ray = Ray.new(targetPos + Vector3.new(0, 50, 0), Vector3.new(0, -100, 0))
+    local hit, pos = Workspace:FindPartOnRay(ray)
+    if hit then targetPos = Vector3.new(targetPos.X, pos.Y + 3, targetPos.Z) end
+
+    -- Pathfinding
+    local path = PathfindingService:CreatePath()
+    path:ComputeAsync(HumanoidRootPart.Position, targetPos)
+    if path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        for _, waypoint in ipairs(waypoints) do
+            Humanoid:MoveTo(waypoint.Position)
+            local reached = Humanoid.MoveToFinished:Wait()
+            if not reached then break end
+        end
+    else
+        -- If path fails just move directly
+        Humanoid:MoveTo(targetPos)
+    end
 end
 
-local function pathfindTo(pos)
-	local path = PathfindingService:CreatePath({
-		AgentRadius = 2,
-		AgentHeight = 5,
-		AgentCanJump = true,
-		AgentCanClimb = true,
-	})
-	path:ComputeAsync(RootPart.Position, pos)
-	if path.Status == Enum.PathStatus.Complete then
-		for _, waypoint in ipairs(path:GetWaypoints()) do
-			Humanoid:MoveTo(waypoint.Position)
-			local reached = Humanoid.MoveToFinished:Wait()
-			if not reached then break end
-		end
-	end
+local function dodgeAbility()
+    -- Example dodge behavior, random sidestep or jump when killer ability detected
+    -- This part requires you to detect killer ability usage in your game, so customize accordingly
+    -- For demonstration, just do a random jump or sidestep every few seconds
+    if not Humanoid or not HumanoidRootPart then return end
+    if math.random() < 0.5 then
+        Humanoid.Jump = true
+    else
+        local sidestepDir = Vector3.new(math.random(-1,1), 0, math.random(-1,1)).Unit * 5
+        Humanoid:MoveTo(HumanoidRootPart.Position + sidestepDir)
+    end
 end
 
-local function sprint(enable)
-	if enable then
-		Humanoid.WalkSpeed = 22
-	else
-		Humanoid.WalkSpeed = 16
-	end
+local function useAbility()
+    -- Placeholder for using survivor or killer abilities
+    -- Customize depending on the game and survivor/killer roles
+    -- Example: call RemoteEvent to use ability
 end
 
---// AI FUNCTIONS
-
-local function dodgeAbility(killerHRP)
-	-- Detect killer ability usage (pseudo detection)
-	-- This is a simplified example, replace with actual detection:
-	local dist = (killerHRP.Position - RootPart.Position).Magnitude
-	if dist < 15 then
-		-- Dodge by moving sideways randomly
-		local dodgeDir = Vector3.new(math.random(-1,1), 0, math.random(-1,1)).Unit * 20
-		local dodgePos = RootPart.Position + dodgeDir
-		pathfindTo(dodgePos)
-		task.wait(0.3)
-		return true
-	end
-	return false
+local function regainStamina()
+    -- When stamina is low, stop moving for a bit
+    -- Example: wait while stamina below threshold
 end
 
-local function autoRepairGenerators()
-	for _, gen in pairs(workspace:GetChildren()) do
-		if gen.Name == "Generator" and gen:FindFirstChild("Health") and gen.Health.Value < gen.Health.MaxValue then
-			-- Move to generator and repair
-			pathfindTo(gen.Position)
-			if gen:FindFirstChild("Repair") then
-				gen.Repair:FireServer()
-			end
-			task.wait(1)
-		end
-	end
+local function autoGenerator()
+    -- Auto activate generators for survivors
+    -- This depends on your game's generator parts and remote events
 end
 
-local function survivorAI()
-	while autoSurvivor and inMatch() and isSurvivor() and Humanoid.Health > 0 do
-		local killerHRP, dist = findNearestPlayer("Killer")
-		if killerHRP then
-			if dist < 40 then
-				if not dodgeAbility(killerHRP) then
-					-- Run away from killer intelligently
-					local runDir = (RootPart.Position - killerHRP.Position).Unit * 30
-					local runPos = RootPart.Position + runDir
-					pathfindTo(runPos)
-				end
-				sprint(true)
-			else
-				sprint(false)
-				autoRepairGenerators()
-			end
-		else
-			sprint(false)
-			autoRepairGenerators()
-		end
-		task.wait(0.3)
-	end
-	sprint(false)
+--// GUI Setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoPlayGUI"
+ScreenGui.Parent = game.CoreGui
+
+local frame = Instance.new("Frame", ScreenGui)
+frame.Size = UDim2.new(0, 220, 0, 130)
+frame.Position = UDim2.new(0, 10, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 25)
+title.BackgroundTransparency = 1
+title.Text = "Forsaken Auto Play"
+title.TextColor3 = Color3.fromRGB(255, 170, 0)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+
+local autoSurvivorBtn = Instance.new("TextButton", frame)
+autoSurvivorBtn.Position = UDim2.new(0, 10, 0, 40)
+autoSurvivorBtn.Size = UDim2.new(1, -20, 0, 30)
+autoSurvivorBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+autoSurvivorBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoSurvivorBtn.Font = Enum.Font.GothamSemibold
+autoSurvivorBtn.TextSize = 16
+autoSurvivorBtn.Text = "Auto Survivor: OFF"
+
+local autoKillerBtn = Instance.new("TextButton", frame)
+autoKillerBtn.Position = UDim2.new(0, 10, 0, 80)
+autoKillerBtn.Size = UDim2.new(1, -20, 0, 30)
+autoKillerBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+autoKillerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoKillerBtn.Font = Enum.Font.GothamSemibold
+autoKillerBtn.TextSize = 16
+autoKillerBtn.Text = "Auto Killer: OFF"
+
+--// Feedback Message
+local function notify(text, color)
+    StarterGui:SetCore("SendNotification", {
+        Title = "Forsaken Auto Play";
+        Text = text;
+        Duration = 3;
+        Button1 = "OK";
+        Icon = "";
+    })
 end
 
-local abilityCooldown = false
-local function useKillerAbility()
-	if abilityCooldown then return end
-	abilityCooldown = true
-	-- Fire the killer's ability remote event (customize)
-	local abilityEvent = ReplicatedStorage:FindFirstChild("UseAbility")
-	if abilityEvent then
-		abilityEvent:FireServer()
-	end
-	task.wait(5) -- Cooldown time
-	abilityCooldown = false
-end
-
-local function killerAI()
-	while autoKiller and inMatch() and isKiller() and Humanoid.Health > 0 do
-		local survivorHRP, dist = findNearestPlayer("Survivor")
-		if survivorHRP then
-			-- Chase survivor
-			pathfindTo(survivorHRP.Position)
-			if dist < 10 then
-				useKillerAbility()
-			end
-		end
-		task.wait(0.5)
-	end
-end
-
---// GUI BUTTONS
-
+--// Toggle functions
 autoSurvivorBtn.MouseButton1Click:Connect(function()
-	if inMatch() and isSurvivor() then
-		autoSurvivor = not autoSurvivor
-		autoSurvivorBtn.Text = "Auto Survivor: " .. (autoSurvivor and "ON" or "OFF")
-		if autoSurvivor then
-			task.spawn(survivorAI)
-		end
-	else
-		autoSurvivorBtn.Text = "Not in match or not survivor"
-		task.wait(2)
-		autoSurvivorBtn.Text = "Auto Survivor: OFF"
-	end
+    if not inMatch() then
+        notify("Not in a match!")
+        return
+    end
+    autoSurvivorEnabled = not autoSurvivorEnabled
+    if autoSurvivorEnabled then
+        autoSurvivorBtn.Text = "Auto Survivor: ON"
+        notify("Auto Survivor Activated")
+    else
+        autoSurvivorBtn.Text = "Auto Survivor: OFF"
+        notify("Auto Survivor Deactivated")
+    end
 end)
 
 autoKillerBtn.MouseButton1Click:Connect(function()
-	if inMatch() and isKiller() then
-		autoKiller = not autoKiller
-		autoKillerBtn.Text = "Auto Killer: " .. (autoKiller and "ON" or "OFF")
-		if autoKiller then
-			task.spawn(killerAI)
-		end
-	else
-		autoKillerBtn.Text = "Not in match or not killer"
-		task.wait(2)
-		autoKillerBtn.Text = "Auto Killer: OFF"
-	end
+    if not inMatch() then
+        notify("Not in a match!")
+        return
+    end
+    if not isKiller() then
+        notify("You are not killer!")
+        return
+    end
+    autoKillerEnabled = not autoKillerEnabled
+    if autoKillerEnabled then
+        autoKillerBtn.Text = "Auto Killer: ON"
+        notify("Auto Killer Activated")
+    else
+        autoKillerBtn.Text = "Auto Killer: OFF"
+        notify("Auto Killer Deactivated")
+    end
+end)
+
+--// Main loop
+getCharacter()
+removeAntiCheatScripts()
+
+RunService.Heartbeat:Connect(function()
+    if not Character or not Humanoid or not HumanoidRootPart or Humanoid.Health <= 0 then
+        getCharacter()
+        return
+    end
+
+    if autoSurvivorEnabled and inMatch() and not isKiller() then
+        -- Find killer
+        local closestKiller = nil
+        local closestDistance = math.huge
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Team and player.Team.Name:lower():find("killer") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if dist < closestDistance then
+                    closestDistance = dist
+                    closestKiller = player
+                end
+            end
+        end
+
+        if closestKiller then
+            runAwayFromKiller(closestKiller.Character.HumanoidRootPart.Position)
+            -- TODO: Add dodgeAbility(), useAbility(), sprint logic here for advanced AI
+        else
+            -- No killer found, maybe do generator or roam
+            autoGenerator()
+        end
+    elseif autoKillerEnabled and inMatch() and isKiller() then
+        -- Killer AI: Find closest survivor and chase
+        local closestSurvivor = nil
+        local closestDistance = math.huge
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Team and player.Team.Name:lower():find("survivor") and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if dist < closestDistance then
+                    closestDistance = dist
+                    closestSurvivor = player
+                end
+            end
+        end
+        if closestSurvivor then
+            Humanoid:MoveTo(closestSurvivor.Character.HumanoidRootPart.Position)
+            -- TODO: Use killer abilities with AI here
+        else
+            Humanoid:MoveTo(HumanoidRootPart.Position) -- idle
+        end
+    end
 end)
